@@ -253,7 +253,7 @@ class MemoriesPageState extends State<MemoriesPage> with AutomaticKeepAliveClien
                                             padding: WidgetStateProperty.all(
                                               const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
                                             ),
-                                            focusNode: home.memoriesSearchFieldFocusNode,
+                                            focusNode: home.convoSearchFieldFocusNode,
                                             controller: _searchController,
                                             trailing: provider.searchQuery.isNotEmpty
                                                 ? [

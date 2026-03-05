@@ -25,12 +25,10 @@ from routers import (
     payment,
     integration,
     conversations,
-    memories,
     mcp,
     mcp_sse,
     oauth,
     auth,
-    action_items,
     task_integrations,
     integrations,
     other,
@@ -63,10 +61,8 @@ app = FastAPI()
 
 app.include_router(transcribe.router)
 app.include_router(conversations.router)
-app.include_router(action_items.router)
 app.include_router(task_integrations.router)
 app.include_router(integrations.router)
-app.include_router(memories.router)
 app.include_router(chat.router)
 app.include_router(plugins.router)
 app.include_router(speech_profile.router)

@@ -14,74 +14,11 @@ class ConnectionGuideSheet extends StatelessWidget {
     final l10n = context.l10n;
     return [
       DeviceGuideProduct(
-        id: 'omi',
-        name: 'Omi',
-        pairingTitle: l10n.pairingTitleOmi,
-        pairingDescription: l10n.pairingDescOmi,
-        localImagePath: Assets.images.omiWithoutRope.path,
-      ),
-      DeviceGuideProduct(
-        id: 'omi_devkit',
-        name: 'Omi DevKit',
-        pairingTitle: l10n.pairingTitleOmiDevkit,
-        pairingDescription: l10n.pairingDescOmiDevkit,
-        localImagePath: Assets.images.omiDevkitWithoutRope.path,
-      ),
-      DeviceGuideProduct(
         id: 'omi_glass',
         name: 'Omi Glass',
         pairingTitle: l10n.pairingTitleOmiGlass,
         pairingDescription: l10n.pairingDescOmiGlass,
         localImagePath: Assets.images.omiGlass.path,
-      ),
-      DeviceGuideProduct(
-        id: 'plaud_note',
-        name: 'Plaud Note',
-        pairingTitle: l10n.pairingTitlePlaudNote,
-        pairingDescription: l10n.pairingDescPlaudNote,
-        localImagePath: Assets.images.plaudNotePin.path,
-      ),
-      DeviceGuideProduct(
-        id: 'bee',
-        name: 'Bee',
-        pairingTitle: l10n.pairingTitleBee,
-        pairingDescription: l10n.pairingDescBee,
-        localImagePath: Assets.images.beeDevice.path,
-      ),
-      DeviceGuideProduct(
-        id: 'limitless',
-        name: 'Limitless',
-        pairingTitle: l10n.pairingTitleLimitless,
-        pairingDescription: l10n.pairingDescLimitless,
-        localImagePath: Assets.images.limitless.path,
-      ),
-      DeviceGuideProduct(
-        id: 'friend_pendant',
-        name: 'Friend Pendant',
-        pairingTitle: l10n.pairingTitleFriendPendant,
-        pairingDescription: l10n.pairingDescFriendPendant,
-        localImagePath: Assets.images.friendPendant.path,
-      ),
-      DeviceGuideProduct(
-        id: 'fieldy',
-        name: 'Fieldy',
-        pairingTitle: l10n.pairingTitleFieldy,
-        pairingDescription: l10n.pairingDescFieldy,
-        localImagePath: Assets.images.fieldy.path,
-      ),
-      DeviceGuideProduct(
-        id: 'apple_watch',
-        name: 'Apple Watch',
-        pairingTitle: l10n.pairingTitleAppleWatch,
-        pairingDescription: l10n.pairingDescAppleWatch,
-        localImagePath: Assets.images.appleWatch.path,
-      ),
-      DeviceGuideProduct(
-        id: 'neo_one',
-        name: 'Neo One',
-        pairingTitle: l10n.pairingTitleNeoOne,
-        pairingDescription: l10n.pairingDescNeoOne,
-        localImagePath: Assets.images.neoOne.path,
       ),
     ];
   }

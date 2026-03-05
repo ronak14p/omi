@@ -6,16 +6,10 @@ import 'package:provider/provider.dart';
 
 import 'package:omi/backend/preferences.dart';
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
-import 'package:omi/gen/flutter_communicator.g.dart';
-import 'package:omi/pages/onboarding/apple_watch_permission_page.dart';
 import 'package:omi/providers/device_provider.dart';
 import 'package:omi/providers/onboarding_provider.dart';
-import 'package:omi/services/devices/apple_watch_connection.dart';
-import 'package:omi/services/services.dart';
 import 'package:omi/utils/device.dart';
 import 'package:omi/utils/l10n_extensions.dart';
-import 'package:omi/utils/logger.dart';
-import 'package:omi/widgets/apple_watch_setup_bottom_sheet.dart';
 import 'package:omi/widgets/confirmation_dialog.dart';
 
 class FoundDevices extends StatefulWidget {
@@ -41,119 +35,6 @@ class _FoundDevicesState extends State<FoundDevices> {
         context.read<DeviceProvider>().periodicConnect('coming from FoundDevices');
       }
     });
-  }
-
-  Future<void> _handleAppleWatchOnboarding(BtDevice device, OnboardingProvider provider) async {
-    try {
-      // First check if the watch is reachable
-      final hostAPI = WatchRecorderHostAPI();
-      final bool isReachable = await hostAPI.isWatchReachable();
-
-      if (!isReachable) {
-        // Watch is not reachable - show bottom sheet to install/open app
-        await _showWatchNotReachableBottomSheet(device.id);
-        return;
-      }
-
-      // Watch is reachable - connect and check permissions
-      await ServiceManager.instance().device.ensureConnection(device.id, force: true);
-      final connection = await ServiceManager.instance().device.ensureConnection(device.id);
-
-      if (connection is! AppleWatchDeviceConnection) {
-        Logger.debug('Device is not an Apple Watch connection');
-        return;
-      }
-
-      // Check permission and try to start recording immediately
-      final bool recordingStarted = await connection.checkPermissionAndStartRecording();
-
-      if (!recordingStarted) {
-        await _showMicrophonePermissionPage(connection);
-        if (!mounted) return;
-      } else {
-        await _completeAppleWatchOnboarding(device, provider);
-        if (!mounted) return;
-      }
-    } catch (e) {
-      Logger.debug('Error handling Apple Watch onboarding: $e');
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(context.l10n.errorConnectingAppleWatch(e.toString())),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
-  }
-
-  /// Show bottom sheet when Apple Watch is not reachable
-  Future<void> _showWatchNotReachableBottomSheet(String deviceId) async {
-    final provider = Provider.of<OnboardingProvider>(context, listen: false);
-    final device = provider.deviceList.firstWhereOrNull((d) => d.id == deviceId);
-    if (device == null) {
-      Logger.debug('Device with id $deviceId not found in provider list.');
-      return;
-    }
-
-    await showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      isScrollControlled: true,
-      builder: (context) => AppleWatchSetupBottomSheet(
-        deviceId: deviceId,
-        onConnected: () async {
-          await _handleAppleWatchOnboarding(device, provider);
-        },
-      ),
-    );
-  }
-
-  Future<void> _showMicrophonePermissionPage(AppleWatchDeviceConnection connection) async {
-    final provider = Provider.of<OnboardingProvider>(context, listen: false);
-    final device = provider.deviceList.firstWhereOrNull((d) => d.id == connection.device.id);
-    if (device == null) {
-      Logger.debug('Device with id ${connection.device.id} not found in provider list.');
-      return;
-    }
-
-    await Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (context) => AppleWatchPermissionPage(
-          connection: connection,
-          onPermissionGranted: () async {
-            await _completeAppleWatchOnboarding(device, provider);
-          },
-        ),
-      ),
-    );
-    if (!mounted) return;
-  }
-
-  Future<void> _completeAppleWatchOnboarding(BtDevice device, OnboardingProvider provider) async {
-    try {
-      provider.deviceId = device.id;
-      provider.deviceName = device.name;
-      provider.isConnected = true;
-      provider.isClicked = false;
-      provider.connectingToDeviceId = null;
-
-      await provider.deviceProvider?.scanAndConnectToDevice();
-
-      if (!mounted) return;
-
-      // Show firmware warning if needed
-      await _showFirmwareWarningIfNeeded(device);
-
-      if (!mounted) return;
-
-      if (widget.isFromOnboarding) {
-        widget.goNext();
-      } else {
-        if (mounted) Navigator.pop(context);
-      }
-    } catch (e) {
-      Logger.debug('Error completing Apple Watch onboarding: $e');
-    }
   }
 
   Future<void> _showFirmwareWarningIfNeeded(BtDevice device) async {
@@ -295,22 +176,17 @@ class _FoundDevicesState extends State<FoundDevices> {
         return GestureDetector(
           onTap: !provider.isClicked
               ? () async {
-                  if (device.type == DeviceType.appleWatch) {
-                    await _handleAppleWatchOnboarding(device, provider);
-                  } else {
-                    // Handle other devices
-                    await provider.handleTap(
-                      device: device,
-                      isFromOnboarding: widget.isFromOnboarding,
-                      goNext: widget.goNext,
-                    );
+                  await provider.handleTap(
+                    device: device,
+                    isFromOnboarding: widget.isFromOnboarding,
+                    goNext: widget.goNext,
+                  );
 
-                    if (!mounted) return;
+                  if (!mounted) return;
 
-                    // Show firmware warning after successful connection
-                    if (provider.isConnected) {
-                      await _showFirmwareWarningIfNeeded(device);
-                    }
+                  // Show firmware warning after successful connection
+                  if (provider.isConnected) {
+                    await _showFirmwareWarningIfNeeded(device);
                   }
                 }
               : null,

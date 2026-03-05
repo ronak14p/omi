@@ -6,25 +6,16 @@ import 'package:flutter_blue_plus/flutter_blue_plus.dart';
 
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
 import 'package:omi/services/devices.dart';
-import 'package:omi/services/devices/apple_watch_connection.dart';
-import 'package:omi/services/devices/bee_connection.dart';
 import 'package:omi/services/devices/discovery/device_locator.dart';
-import 'package:omi/services/devices/fieldy_connection.dart';
-import 'package:omi/services/devices/frame_connection.dart';
-import 'package:omi/services/devices/friend_pendant_connection.dart';
-import 'package:omi/services/devices/limitless_connection.dart';
 import 'package:omi/services/devices/models.dart';
 import 'package:omi/services/devices/omi_connection.dart';
 import 'package:omi/services/devices/omiglass_connection.dart';
-import 'package:omi/services/devices/plaud_connection.dart';
 import 'package:omi/services/devices/wifi_sync_error.dart';
 import 'package:omi/main.dart';
 import 'package:omi/services/notifications.dart';
 import 'package:omi/utils/l10n_extensions.dart';
 import 'package:omi/services/devices/transports/device_transport.dart';
 import 'package:omi/services/devices/transports/ble_transport.dart';
-import 'package:omi/services/devices/transports/frame_transport.dart';
-import 'package:omi/services/devices/transports/watch_transport.dart';
 import 'package:omi/utils/logger.dart';
 
 class DeviceConnectionFactory {
@@ -41,10 +32,6 @@ class DeviceConnectionFactory {
         if (deviceId == null) return null;
         final bleDevice = BluetoothDevice.fromId(deviceId);
         transport = BleTransport(bleDevice);
-        break;
-
-      case TransportKind.watchConnectivity:
-        transport = WatchTransport();
         break;
 
       default:
@@ -69,25 +56,9 @@ class DeviceConnectionFactory {
         return OmiDeviceConnection(device, transport);
       case DeviceType.openglass:
         return OmiGlassConnection(device, transport);
-      case DeviceType.bee:
-        return BeeDeviceConnection(device, transport);
-      case DeviceType.plaud:
-        return PlaudDeviceConnection(device, transport);
-      case DeviceType.frame:
-        if (locator.kind == TransportKind.bluetooth) {
-          final deviceId = locator.bluetoothId;
-          if (deviceId == null) return null;
-          transport = FrameTransport(deviceId);
-        }
-        return FrameDeviceConnection(device, transport);
-      case DeviceType.appleWatch:
-        return AppleWatchDeviceConnection(device, transport);
-      case DeviceType.fieldy:
-        return FieldyDeviceConnection(device, transport);
-      case DeviceType.friendPendant:
-        return FriendPendantDeviceConnection(device, transport);
-      case DeviceType.limitless:
-        return LimitlessDeviceConnection(device, transport);
+      default:
+        Logger.debug('DeviceConnectionFactory: Unsupported device type for MVP glasses build: ${device.type}');
+        return null;
     }
   }
 }

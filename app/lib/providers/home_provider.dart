@@ -39,11 +39,9 @@ class HomeProvider extends ChangeNotifier {
   final FocusNode chatFieldFocusNode = FocusNode();
   final FocusNode appsSearchFieldFocusNode = FocusNode();
   final FocusNode convoSearchFieldFocusNode = FocusNode();
-  final FocusNode memoriesSearchFieldFocusNode = FocusNode();
   bool isAppsSearchFieldFocused = false;
   bool isChatFieldFocused = false;
   bool isConvoSearchFieldFocused = false;
-  bool isMemoriesSearchFieldFocused = false;
   bool showConvoSearchBar = false;
   bool hasSpeakerProfile = true;
   bool isLoading = false;
@@ -113,13 +111,11 @@ class HomeProvider extends ChangeNotifier {
     chatFieldFocusNode.addListener(_onFocusChange);
     appsSearchFieldFocusNode.addListener(_onFocusChange);
     convoSearchFieldFocusNode.addListener(_onConvoSearchFocusChange);
-    memoriesSearchFieldFocusNode.addListener(_onFocusChange);
   }
 
   void _onFocusChange() {
     isChatFieldFocused = chatFieldFocusNode.hasFocus;
     isAppsSearchFieldFocused = appsSearchFieldFocusNode.hasFocus;
-    isMemoriesSearchFieldFocused = memoriesSearchFieldFocusNode.hasFocus;
     notifyListeners();
   }
 
@@ -260,8 +256,6 @@ class HomeProvider extends ChangeNotifier {
     chatFieldFocusNode.removeListener(_onFocusChange);
     appsSearchFieldFocusNode.removeListener(_onFocusChange);
     convoSearchFieldFocusNode.removeListener(_onConvoSearchFocusChange);
-    memoriesSearchFieldFocusNode.removeListener(_onFocusChange);
-    memoriesSearchFieldFocusNode.dispose();
     chatFieldFocusNode.dispose();
     appsSearchFieldFocusNode.dispose();
     convoSearchFieldFocusNode.dispose();

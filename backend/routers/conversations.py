@@ -3,7 +3,6 @@ from typing import Optional, List
 from datetime import datetime, timezone
 
 import database.conversations as conversations_db
-import database.action_items as action_items_db
 import database.redis_db as redis_db
 import database.users as users_db
 from database.vector_db import delete_vector
@@ -19,9 +18,6 @@ from models.conversation import (
     MergeConversationsRequest,
     MergeConversationsResponse,
     SetConversationEventsStateRequest,
-    SetConversationActionItemsStateRequest,
-    UpdateActionItemDescriptionRequest,
-    DeleteActionItemRequest,
     BulkAssignSegmentsRequest,
     UpdateSegmentTextRequest,
     SearchRequest,
@@ -227,121 +223,6 @@ def set_conversation_events_state(
         events[event_idx].created = data.values[i]
 
     conversations_db.update_conversation_events(uid, conversation_id, [event.dict() for event in events])
-    return {"status": "Ok"}
-
-
-@router.patch("/v1/conversations/{conversation_id}/action-items", response_model=dict, tags=['conversations'])
-def set_action_item_status(
-    data: SetConversationActionItemsStateRequest, conversation_id: str, uid=Depends(auth.get_current_user_uid)
-):
-    conversation = _get_valid_conversation_by_id(uid, conversation_id)
-    conversation = Conversation(**conversation)
-    action_items = conversation.structured.action_items
-    for i, action_item_idx in enumerate(data.items_idx):
-        if action_item_idx >= len(action_items):
-            continue
-
-        action_item = action_items[action_item_idx]
-        new_completed_status = data.values[i]
-
-        # Set completed status
-        action_item.completed = new_completed_status
-
-        # Handle created_at backwards compatibility
-        if action_item.created_at is None:
-            action_item.created_at = conversation.created_at
-
-        # Set completed_at timestamp
-        if new_completed_status:
-            # Mark as completed - set completed_at to current time
-            action_item.completed_at = datetime.now(timezone.utc)
-        else:
-            # Mark as incomplete - clear completed_at
-            action_item.completed_at = None
-
-    conversations_db.update_conversation_action_items(
-        uid, conversation_id, [action_item.dict() for action_item in action_items]
-    )
-
-    # Mirror status updates to the standalone action_items collection
-    try:
-        existing_items = action_items_db.get_action_items_by_conversation(uid, conversation_id)
-        # Map descriptions to item IDs for quick lookup
-        description_to_ids = {}
-        for ai in existing_items:
-            desc = ai.get('description')
-            if not desc:
-                continue
-            description_to_ids.setdefault(desc, []).append(ai['id'])
-
-        for i, action_item_idx in enumerate(data.items_idx):
-            if action_item_idx >= len(action_items):
-                continue
-            action_item = action_items[action_item_idx]
-            new_completed_status = data.values[i]
-
-            ids = description_to_ids.get(action_item.description, [])
-            for action_item_id in ids:
-                action_items_db.mark_action_item_completed(uid, action_item_id, bool(new_completed_status))
-    except Exception as e:
-        # Don't break conversation route if mirrored update fails
-        logger.error(f'Failed to mirror action item status update: {e}')
-    return {"status": "Ok"}
-
-
-@router.patch(
-    "/v1/conversations/{conversation_id}/action-items/{action_item_idx}", response_model=dict, tags=['conversations']
-)
-def update_action_item_description(
-    conversation_id: str, data: UpdateActionItemDescriptionRequest, uid=Depends(auth.get_current_user_uid)
-):
-    conversation = _get_valid_conversation_by_id(uid, conversation_id)
-    conversation = Conversation(**conversation)
-    action_items = conversation.structured.action_items
-
-    found_item = False
-    for item in action_items:
-        if item.description == data.old_description:
-            item.description = data.description
-            found_item = True
-            break
-
-    if not found_item:
-        raise HTTPException(status_code=404, detail=f"Action item with description '{data.old_description}' not found")
-
-    conversations_db.update_conversation_action_items(
-        uid, conversation_id, [action_item.dict() for action_item in action_items]
-    )
-
-    # Mirror description update in the standalone action_items collection
-    try:
-        existing_items = action_items_db.get_action_items_by_conversation(uid, conversation_id)
-        for ai in existing_items:
-            if ai.get('description') == data.old_description:
-                action_items_db.update_action_item(uid, ai['id'], {'description': data.description})
-    except Exception as e:
-        logger.error(f'Failed to mirror action item description update: {e}')
-    return {"status": "Ok"}
-
-
-@router.delete("/v1/conversations/{conversation_id}/action-items", response_model=dict, tags=['conversations'])
-def delete_action_item(data: DeleteActionItemRequest, conversation_id: str, uid=Depends(auth.get_current_user_uid)):
-    conversation = _get_valid_conversation_by_id(uid, conversation_id)
-    conversation = Conversation(**conversation)
-    action_items = conversation.structured.action_items
-    updated_action_items = [item for item in action_items if not (item.description == data.description)]
-    conversations_db.update_conversation_action_items(
-        uid, conversation_id, [action_item.dict() for action_item in updated_action_items]
-    )
-
-    # Mirror deletion in the standalone action_items collection
-    try:
-        existing_items = action_items_db.get_action_items_by_conversation(uid, conversation_id)
-        for ai in existing_items:
-            if ai.get('description') == data.description:
-                action_items_db.delete_action_item(uid, ai['id'])
-    except Exception as e:
-        logger.error(f'Failed to mirror action item deletion: {e}')
     return {"status": "Ok"}
 
 

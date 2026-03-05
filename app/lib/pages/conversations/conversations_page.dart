@@ -7,14 +7,12 @@ import 'package:visibility_detector/visibility_detector.dart';
 
 import 'package:omi/backend/schema/conversation.dart';
 import 'package:omi/pages/capture/widgets/widgets.dart';
-import 'package:omi/pages/conversations/widgets/daily_score_widget.dart';
 import 'package:omi/pages/conversations/widgets/daily_summaries_list.dart';
 import 'package:omi/pages/conversations/widgets/folder_tabs.dart';
 import 'package:omi/pages/conversations/widgets/goals_widget.dart';
 import 'package:omi/pages/conversations/widgets/processing_capture.dart';
 import 'package:omi/pages/conversations/widgets/search_result_header_widget.dart';
 import 'package:omi/pages/conversations/widgets/search_widget.dart';
-import 'package:omi/pages/conversations/widgets/today_tasks_widget.dart';
 import 'package:omi/backend/preferences.dart';
 import 'package:omi/providers/capture_provider.dart';
 import 'package:omi/providers/conversation_provider.dart';
@@ -39,11 +37,6 @@ class _ConversationsPageState extends State<ConversationsPage> with AutomaticKee
   final AppReviewService _appReviewService = AppReviewService();
   final ScrollController _scrollController = ScrollController();
   final GlobalKey<GoalsWidgetState> _goalsWidgetKey = GlobalKey<GoalsWidgetState>();
-  final GlobalKey<DailyScoreWidgetState> _dailyScoreWidgetKey = GlobalKey<DailyScoreWidgetState>();
-
-  void _refreshGoals() {
-    _dailyScoreWidgetKey.currentState?.reloadGoals();
-  }
 
   // Public method to trigger goal creation from outside
   void addGoal() {
@@ -175,9 +168,7 @@ class _ConversationsPageState extends State<ConversationsPage> with AutomaticKee
         onRefresh: () async {
           HapticFeedback.mediumImpact();
           Provider.of<CaptureProvider>(context, listen: false).refreshInProgressConversations();
-          // Refresh goals widget
           _goalsWidgetKey.currentState?.refresh();
-          _refreshGoals();
           await Future.wait([
             convoProvider.getInitialConversations(),
             Provider.of<FolderProvider>(context, listen: false).loadFolders(),
@@ -229,12 +220,7 @@ class _ConversationsPageState extends State<ConversationsPage> with AutomaticKee
                 return SliverToBoxAdapter(
                   child: Column(
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.only(left: 16, right: 16, top: 16),
-                        child: DailyScoreWidget(key: _dailyScoreWidgetKey, goalsWidgetKey: _goalsWidgetKey),
-                      ),
-                      const TodayTasksWidget(),
-                      GoalsWidget(key: _goalsWidgetKey, onRefresh: _refreshGoals),
+                      GoalsWidget(key: _goalsWidgetKey),
                     ],
                   ),
                 );

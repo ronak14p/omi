@@ -19,7 +19,6 @@ import 'package:omi/backend/schema/app.dart';
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
 import 'package:omi/backend/schema/geolocation.dart';
 import 'package:omi/main.dart';
-import 'package:omi/pages/action_items/action_items_page.dart';
 import 'package:omi/pages/apps/app_detail/app_detail.dart';
 import 'package:omi/pages/apps/page.dart';
 import 'package:omi/pages/chat/page.dart';
@@ -28,13 +27,10 @@ import 'package:omi/pages/conversation_detail/page.dart';
 import 'package:omi/pages/conversations/conversations_page.dart';
 import 'package:omi/pages/conversations/sync_page.dart';
 import 'package:omi/pages/conversations/widgets/merge_action_bar.dart';
-import 'package:omi/pages/memories/page.dart';
 import 'package:omi/pages/settings/daily_summary_detail_page.dart';
 import 'package:omi/pages/settings/data_privacy_page.dart';
 import 'package:omi/pages/settings/settings_drawer.dart';
-import 'package:omi/pages/settings/task_integrations_page.dart';
 import 'package:omi/pages/settings/wrapped_2025_page.dart';
-import 'package:omi/providers/action_items_provider.dart';
 import 'package:omi/providers/app_provider.dart';
 import 'package:omi/providers/capture_provider.dart';
 import 'package:omi/providers/connectivity_provider.dart';
@@ -119,8 +115,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
   StreamSubscription? _notificationStreamSubscription;
 
   final GlobalKey<State<ConversationsPage>> _conversationsPageKey = GlobalKey<State<ConversationsPage>>();
-  final GlobalKey<State<ActionItemsPage>> _actionItemsPageKey = GlobalKey<State<ActionItemsPage>>();
-  final GlobalKey<State<MemoriesPage>> _memoriesPageKey = GlobalKey<State<MemoriesPage>>();
   final GlobalKey<AppsPageState> _appsPageKey = GlobalKey<AppsPageState>();
   late final List<Widget> _pages;
 
@@ -142,34 +136,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
           (conversationsState as dynamic).scrollToTop();
         }
         break;
-      case 1:
-        final actionItemsState = _actionItemsPageKey.currentState;
-        if (actionItemsState != null) {
-          (actionItemsState as dynamic).scrollToTop();
-        }
-        break;
-      case 2:
-        final memoriesState = _memoriesPageKey.currentState;
-        if (memoriesState != null) {
-          (memoriesState as dynamic).scrollToTop();
-        }
-        break;
       case 3:
         final appsState = _appsPageKey.currentState;
         if (appsState != null) {
           appsState.scrollToTop();
         }
         break;
-    }
-  }
-
-  void _addGoal() {
-    // Navigate to conversations page
-    context.read<HomeProvider>().setIndex(0);
-    // Trigger goal creation
-    final conversationsState = _conversationsPageKey.currentState;
-    if (conversationsState != null) {
-      (conversationsState as dynamic).addGoal();
     }
   }
 
@@ -208,10 +180,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
     PlatformManager.instance.crashReporter.logInfo(event);
   }
 
-  ///Screens with respect to subpage
-  final Map<String, Widget> screensWithRespectToPath = {
-    '/facts': const MemoriesPage(),
-  };
   bool? previousConnection;
 
   void _onReceiveTaskData(dynamic data) async {
@@ -232,8 +200,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
   void initState() {
     _pages = [
       ConversationsPage(key: _conversationsPageKey),
-      ActionItemsPage(key: _actionItemsPageKey, onAddGoal: _addGoal),
-      MemoriesPage(key: _memoriesPageKey),
+      const SizedBox.shrink(),
+      const SizedBox.shrink(),
       AppsPage(key: _appsPageKey),
     ];
     SharedPreferencesUtil().onboardingCompleted = true;
@@ -257,13 +225,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
       }
 
       switch (pageAlias) {
-        case "action-items":
-          homePageIdx = 1;
-          break;
-        case "memories":
-        case "facts":
-          homePageIdx = 2;
-          break;
         case "apps":
           homePageIdx = 3;
           break;
@@ -372,13 +333,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
             );
           }
           break;
-        case "facts":
-          MyApp.navigatorKey.currentState?.push(
-            MaterialPageRoute(
-              builder: (context) => const MemoriesPage(),
-            ),
-          );
-          break;
         case "conversation":
           // Handle conversation deep link: /conversation/{id}?share=1
           if (detailPageId != null && detailPageId.isNotEmpty) {
@@ -438,9 +392,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
               );
             }
           });
-          break;
-        case "action-items":
-          // Tab index already set to 1 (ActionItemsPage) above
           break;
         default:
       }
@@ -645,8 +596,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
                       Consumer<HomeProvider>(
                         builder: (context, home, child) {
                           if (home.isChatFieldFocused ||
-                              home.isAppsSearchFieldFocused ||
-                              home.isMemoriesSearchFieldFocused) {
+                              home.isAppsSearchFieldFocused) {
                             return const SizedBox.shrink();
                           }
 
@@ -997,68 +947,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
                           ),
                         ),
                       ],
-                      const SizedBox(width: 8),
-                    ],
-                  );
-                },
-              ),
-              // Action items page buttons - export and completed toggle
-              Consumer2<HomeProvider, ActionItemsProvider>(
-                builder: (context, homeProvider, actionItemsProvider, _) {
-                  if (homeProvider.selectedIndex != 1) {
-                    return const SizedBox.shrink();
-                  }
-                  final showCompleted = actionItemsProvider.showCompletedView;
-                  return Row(
-                    children: [
-                      // Export button
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: const BoxDecoration(
-                          color: Color(0xFF1F1F25),
-                          shape: BoxShape.circle,
-                        ),
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          icon: const Icon(
-                            FontAwesomeIcons.arrowUpFromBracket,
-                            size: 16,
-                            color: Colors.white70,
-                          ),
-                          onPressed: () {
-                            HapticFeedback.mediumImpact();
-                            MixpanelManager().exportTasksBannerClicked();
-                            Navigator.of(context).push(
-                              MaterialPageRoute(
-                                builder: (context) => const TaskIntegrationsPage(),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // Completed toggle
-                      Container(
-                        width: 36,
-                        height: 36,
-                        decoration: BoxDecoration(
-                          color: showCompleted ? Colors.deepPurple.withValues(alpha: 0.5) : const Color(0xFF1F1F25),
-                          shape: BoxShape.circle,
-                        ),
-                        child: IconButton(
-                          padding: EdgeInsets.zero,
-                          icon: Icon(
-                            FontAwesomeIcons.solidCircleCheck,
-                            size: 16,
-                            color: showCompleted ? Colors.white : Colors.white70,
-                          ),
-                          onPressed: () {
-                            HapticFeedback.mediumImpact();
-                            actionItemsProvider.toggleShowCompletedView();
-                          },
-                        ),
-                      ),
                       const SizedBox(width: 8),
                     ],
                   );

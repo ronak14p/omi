@@ -195,18 +195,7 @@ Future<DeviceType?> getTypeOfBluetoothDevice(BluetoothDevice device) async {
   DeviceType? deviceType;
   await device.discoverServices();
 
-  // Check for device types using helper methods
-  if (BtDevice.isBeeDeviceFromDevice(device)) {
-    deviceType = DeviceType.bee;
-  } else if (BtDevice.isPlaudDeviceFromDevice(device)) {
-    deviceType = DeviceType.plaud;
-  } else if (BtDevice.isFieldyDeviceFromDevice(device)) {
-    deviceType = DeviceType.fieldy;
-  } else if (BtDevice.isFriendPendantDeviceFromDevice(device)) {
-    deviceType = DeviceType.friendPendant;
-  } else if (BtDevice.isLimitlessDeviceFromDevice(device)) {
-    deviceType = DeviceType.limitless;
-  } else if (BtDevice.isOmiDeviceFromDevice(device)) {
+  if (BtDevice.isOmiDeviceFromDevice(device)) {
     // Check if the device has the image data stream characteristic
     final hasImageStream = device.servicesList
         .where((s) => s.uuid == Guid.fromString(omiServiceUuid))
@@ -216,8 +205,6 @@ Future<DeviceType?> getTypeOfBluetoothDevice(BluetoothDevice device) async {
     final isOpenGlassByName =
         device.platformName.toLowerCase().contains('openglass') || device.platformName.toLowerCase().contains('glass');
     deviceType = (hasImageStream || isOpenGlassByName) ? DeviceType.openglass : DeviceType.omi;
-  } else if (BtDevice.isFrameDeviceFromDevice(device)) {
-    deviceType = DeviceType.frame;
   }
   if (deviceType != null) {
     cachedDevicesMap[device.remoteId.toString()] = deviceType;
@@ -674,13 +661,7 @@ class BtDevice {
 
   // Check if a scan result is from a supported device
   static bool isSupportedDevice(ScanResult result) {
-    return isBeeDevice(result) ||
-        isPlaudDevice(result) ||
-        isFieldyDevice(result) ||
-        isFriendPendantDevice(result) ||
-        isLimitlessDevice(result) ||
-        isOmiDevice(result) ||
-        isFrameDevice(result);
+    return isOmiDevice(result);
   }
 
   static bool isBeeDevice(ScanResult result) {
@@ -789,20 +770,8 @@ class BtDevice {
   static fromScanResult(ScanResult result) {
     DeviceType? deviceType;
 
-    if (isBeeDevice(result)) {
-      deviceType = DeviceType.bee;
-    } else if (isPlaudDevice(result)) {
-      deviceType = DeviceType.plaud;
-    } else if (isFieldyDevice(result)) {
-      deviceType = DeviceType.fieldy;
-    } else if (isFriendPendantDevice(result)) {
-      deviceType = DeviceType.friendPendant;
-    } else if (isLimitlessDevice(result)) {
-      deviceType = DeviceType.limitless;
-    } else if (isOmiDevice(result)) {
+    if (isOmiDevice(result)) {
       deviceType = DeviceType.omi;
-    } else if (isFrameDevice(result)) {
-      deviceType = DeviceType.frame;
     }
     if (deviceType != null) {
       cachedDevicesMap[result.device.remoteId.toString()] = deviceType;

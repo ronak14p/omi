@@ -36,7 +36,6 @@ import 'package:omi/pages/conversation_detail/conversation_detail_provider.dart'
 import 'package:omi/pages/payments/payment_method_provider.dart';
 import 'package:omi/pages/persona/persona_provider.dart';
 import 'package:omi/pages/settings/ai_app_generator_provider.dart';
-import 'package:omi/providers/action_items_provider.dart';
 import 'package:omi/providers/announcement_provider.dart';
 import 'package:omi/providers/app_provider.dart';
 import 'package:omi/providers/auth_provider.dart';
@@ -52,7 +51,6 @@ import 'package:omi/providers/home_provider.dart';
 import 'package:omi/providers/integration_provider.dart';
 import 'package:omi/providers/locale_provider.dart';
 import 'package:omi/providers/mcp_provider.dart';
-import 'package:omi/providers/memories_provider.dart';
 import 'package:omi/providers/message_provider.dart';
 import 'package:omi/providers/onboarding_provider.dart';
 import 'package:omi/providers/people_provider.dart';
@@ -64,7 +62,6 @@ import 'package:omi/providers/user_provider.dart';
 import 'package:omi/providers/voice_recorder_provider.dart';
 import 'package:omi/services/auth_service.dart';
 import 'package:omi/services/notifications.dart';
-import 'package:omi/services/notifications/action_item_notification_handler.dart';
 import 'package:omi/services/notifications/important_conversation_notification_handler.dart';
 import 'package:omi/services/notifications/merge_notification_handler.dart';
 import 'package:omi/services/services.dart';
@@ -99,14 +96,7 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
   final messageType = data['type'];
   const channelKey = 'channel';
 
-  // Handle action item messages
-  if (messageType == 'action_item_reminder') {
-    await ActionItemNotificationHandler.handleReminderMessage(data, channelKey);
-  } else if (messageType == 'action_item_update') {
-    await ActionItemNotificationHandler.handleUpdateMessage(data, channelKey);
-  } else if (messageType == 'action_item_delete') {
-    await ActionItemNotificationHandler.handleDeletionMessage(data);
-  } else if (messageType == 'merge_completed') {
+  if (messageType == 'merge_completed') {
     await MergeNotificationHandler.handleMergeCompleted(data, channelKey, isAppInForeground: false);
   } else if (messageType == 'important_conversation') {
     await ImportantConversationNotificationHandler.handleImportantConversation(
@@ -336,13 +326,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ),
         ChangeNotifierProvider(create: (context) => PaymentMethodProvider()),
         ChangeNotifierProvider(create: (context) => PersonaProvider()),
-        ChangeNotifierProxyProvider<ConnectivityProvider, MemoriesProvider>(
-          create: (context) => MemoriesProvider(),
-          update: (context, connectivity, previous) =>
-              (previous?..setConnectivityProvider(connectivity)) ?? MemoriesProvider(),
-        ),
         ChangeNotifierProvider(create: (context) => UserProvider()),
-        ChangeNotifierProvider(create: (context) => ActionItemsProvider()),
         ChangeNotifierProvider(create: (context) => GoalsProvider()..init()),
         ChangeNotifierProvider(create: (context) => SyncProvider()),
         ChangeNotifierProvider(create: (context) => TaskIntegrationProvider()),

@@ -71,50 +71,8 @@ class BottomNavBar extends StatelessWidget {
                         ),
                       ),
                     ),
-                    // Action Items tab
-                    Expanded(
-                      child: InkWell(
-                        onTap: () {
-                          HapticFeedback.mediumImpact();
-                          MixpanelManager().bottomNavigationTabClicked('Action Items');
-                          primaryFocus?.unfocus();
-                          onTabTap(1, home.selectedIndex == 1);
-                        },
-                        child: SizedBox(
-                          height: 90,
-                          child: Center(
-                            child: Icon(
-                              FontAwesomeIcons.listCheck,
-                              color: home.selectedIndex == 1 ? Colors.white : Colors.grey,
-                              size: 26,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                     // Center space for record button - only when no OMI device is connected
                     if (showCenterButton && !isOmiDeviceConnected) const SizedBox(width: 80),
-                    // Memories tab
-                    Expanded(
-                      child: InkWell(
-                        onTap: () {
-                          HapticFeedback.mediumImpact();
-                          MixpanelManager().bottomNavigationTabClicked('Memories');
-                          primaryFocus?.unfocus();
-                          onTabTap(2, home.selectedIndex == 2);
-                        },
-                        child: SizedBox(
-                          height: 90,
-                          child: Center(
-                            child: Icon(
-                              FontAwesomeIcons.brain,
-                              color: home.selectedIndex == 2 ? Colors.white : Colors.grey,
-                              size: 26,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
                     // Apps tab
                     Expanded(
                       child: InkWell(
