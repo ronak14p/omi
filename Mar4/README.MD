@@ -32,6 +32,10 @@ This `Mar4/` folder contains the planning and forensic artifacts created/updated
     - AI dialogue and intent clarification
     - explicit confirmation before backend-agent execution
 
+- `NEXT_PRUNE.MD`
+  - Execution-grade prune spec for the next cleanup pass.
+  - Includes exact keep/delete/refactor paths, rationale, phased order, and validation gates for single-agent MVP hardening.
+
 
 ## 3) Implementation Work Completed
 
