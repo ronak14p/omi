@@ -562,6 +562,19 @@ class OmiGlassConnection extends DeviceConnection {
   }
 
   @override
+  Future performCameraTakePhoto() async {
+    try {
+      await transport.writeCharacteristic(
+        omiServiceUuid,
+        imageCaptureControlCharacteristicUuid,
+        [-1], // Single photo capture
+      );
+    } catch (e) {
+      Logger.debug('OmiGlassConnection: Error taking photo: $e');
+    }
+  }
+
+  @override
   Future<bool> performHasPhotoStreamingCharacteristic() async {
     // OmiGlass has camera capability
     try {

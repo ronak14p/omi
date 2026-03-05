@@ -57,7 +57,8 @@ import 'package:omi/backend/schema/message_event.dart'
         PhotoProcessingEvent,
         PhotoDescribedEvent,
         FreemiumThresholdReachedEvent,
-        SegmentsDeletedEvent;
+        SegmentsDeletedEvent,
+        RequestCapturePhotoEvent;
 
 class CaptureProvider extends ChangeNotifier
     with MessageNotifierMixin, WidgetsBindingObserver
@@ -289,6 +290,8 @@ class CaptureProvider extends ChangeNotifier
   Timer? _voiceCommandTimeoutTimer; // 30s auto-end timer for voice questions
   bool _voiceSessionStartedByLegacyLongPress =
       false; // Track if session was started by legacy long press (3) vs new toggle (1), TODO: remove this flag later
+  DateTime? _lastActivationPhotoCaptureAt;
+  static const Duration _activationPhotoCaptureCooldown = Duration(seconds: 3);
 
   StreamSubscription? _storageStream;
 
@@ -1493,6 +1496,42 @@ class CaptureProvider extends ChangeNotifier
       }
       return;
     }
+
+    if (event is RequestCapturePhotoEvent) {
+      unawaited(_handleRequestCapturePhotoEvent(event));
+      return;
+    }
+  }
+
+  Future<void> _handleRequestCapturePhotoEvent(RequestCapturePhotoEvent event) async {
+    final now = DateTime.now();
+    if (_lastActivationPhotoCaptureAt != null &&
+        now.difference(_lastActivationPhotoCaptureAt!) < _activationPhotoCaptureCooldown) {
+      Logger.debug('Ignoring photo capture request due to cooldown: ${event.interactionId}');
+      return;
+    }
+    _lastActivationPhotoCaptureAt = now;
+
+    final device = _recordingDevice;
+    if (device == null) {
+      Logger.debug('No recording device connected; cannot capture activation photo');
+      return;
+    }
+
+    final connection = await ServiceManager.instance().device.ensureConnection(device.id);
+    if (connection == null) {
+      Logger.debug('Device connection unavailable; cannot capture activation photo');
+      return;
+    }
+
+    final hasPhotoStreaming = await connection.hasPhotoStreamingCharacteristic();
+    if (!hasPhotoStreaming) {
+      Logger.debug('Connected device has no photo streaming characteristic');
+      return;
+    }
+
+    Logger.debug('Requesting single photo capture for activation: ${event.interactionId}');
+    await connection.cameraTakePhoto();
   }
 
   Future<void> forceProcessingCurrentConversation() async {

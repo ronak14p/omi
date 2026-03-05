@@ -387,6 +387,16 @@ abstract class DeviceConnection {
 
   Future performCameraStopPhotoController();
 
+  Future cameraTakePhoto() async {
+    if (await isConnected()) {
+      return await performCameraTakePhoto();
+    }
+    _showDeviceDisconnectedNotification();
+    return null;
+  }
+
+  Future performCameraTakePhoto() async {}
+
   Future<bool> hasPhotoStreamingCharacteristic() async {
     if (await isConnected()) {
       return await performHasPhotoStreamingCharacteristic();

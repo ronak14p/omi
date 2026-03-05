@@ -3,6 +3,7 @@ import io
 import json
 import logging
 import os
+import re
 import struct
 import time
 import uuid
@@ -57,6 +58,7 @@ from models.message_event import (
     MessageServiceStatusEvent,
     PhotoDescribedEvent,
     PhotoProcessingEvent,
+    RequestCapturePhotoEvent,
     SegmentsDeletedEvent,
     SpeakerLabelSuggestionEvent,
     TranslationEvent,
@@ -110,6 +112,42 @@ PUSHER_ENABLED = bool(os.getenv('HOSTED_PUSHER_API_URL'))
 
 # Freemium: Send notification when credits threshold is reached
 FREEMIUM_THRESHOLD_SECONDS = 180  # 3 minutes remaining - notify user
+
+ACTIVATION_VISUAL_PHRASES: Tuple[str, ...] = (
+    "what am i looking at",
+    "what am i seeing",
+    "what is this",
+    "what do you see",
+    "what's in front of me",
+    "what is in front of me",
+)
+ACTIVATION_WAKE_PHRASE_TOKENS: Tuple[str, ...] = (
+    "ai",
+    "hey ai",
+    "ok ai",
+    "okay ai",
+    "a i",
+)
+
+
+def _normalize_transcript_text(text: str) -> str:
+    normalized = re.sub(r"[^a-z0-9\s']", " ", text.lower())
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _is_initial_visual_activation_request(text: str) -> bool:
+    normalized = _normalize_transcript_text(text)
+    if not normalized:
+        return False
+
+    has_visual_request = any(phrase in normalized for phrase in ACTIVATION_VISUAL_PHRASES)
+    if not has_visual_request:
+        return False
+
+    # Prefer explicit wake words, but allow direct visual question phrasing for robustness.
+    if any(token in normalized for token in ACTIVATION_WAKE_PHRASE_TOKENS):
+        return True
+    return normalized.startswith("what am i looking at") or normalized.startswith("what is this")
 
 
 class CustomSttMode(str, Enum):
@@ -290,6 +328,8 @@ async def _stream_handler(
     words_transcribed_since_last_record: int = 0
     last_transcript_time: Optional[float] = None
     current_conversation_id = None
+    activation_photo_requested_conversations: Set[str] = set()
+    activation_interaction_ids: Dict[str, str] = {}
 
     freemium_threshold_sent = False  # Track if we've sent the freemium threshold notification
 
@@ -696,6 +736,40 @@ async def _stream_handler(
         nonlocal realtime_segment_buffers
         # Note: DG timestamp remapping is handled inside GatedDeepgramSocket wrapper
         realtime_segment_buffers.extend(segments)
+
+    def _maybe_emit_capture_photo_request(segments: List[TranscriptSegment]):
+        nonlocal current_conversation_id
+        if not current_conversation_id or current_conversation_id in activation_photo_requested_conversations:
+            return
+
+        for segment in segments:
+            if not segment.is_user:
+                continue
+            if not _is_initial_visual_activation_request(segment.text):
+                continue
+
+            interaction_id = activation_interaction_ids.get(current_conversation_id)
+            if not interaction_id:
+                interaction_id = str(uuid.uuid4())
+                activation_interaction_ids[current_conversation_id] = interaction_id
+
+            activation_photo_requested_conversations.add(current_conversation_id)
+            trigger_text = segment.text[:200] if segment.text else None
+            logger.info(
+                "Activation phrase detected, requesting photo capture uid=%s session=%s conversation=%s interaction=%s",
+                uid,
+                session_id,
+                current_conversation_id,
+                interaction_id,
+            )
+            _send_message_event(
+                RequestCapturePhotoEvent(
+                    interaction_id=interaction_id,
+                    reason="activation_phrase",
+                    trigger_text=trigger_text,
+                )
+            )
+            return
 
     async def _process_stt():
         nonlocal websocket_close_code
@@ -1608,6 +1682,7 @@ async def _stream_handler(
 
             if transcript_segments:
                 await websocket.send_json([segment.dict() for segment in updated_segments])
+                _maybe_emit_capture_photo_request(updated_segments)
 
                 if transcript_send is not None and user_has_credits:
                     transcript_send([segment.dict() for segment in transcript_segments])

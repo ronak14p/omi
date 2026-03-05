@@ -282,6 +282,7 @@ class OmiDeviceConnection extends DeviceConnection {
     }
   }
 
+  @override
   Future performCameraTakePhoto() async {
     try {
       // -1 tells the firmware to take a single photo

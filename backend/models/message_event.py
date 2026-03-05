@@ -146,6 +146,19 @@ class PhotoDescribedEvent(MessageEvent):
         return j
 
 
+class RequestCapturePhotoEvent(MessageEvent):
+    event_type: str = "request_capture_photo"
+    interaction_id: str
+    reason: str = "activation_phrase"
+    trigger_text: Optional[str] = None
+
+    def to_json(self):
+        j = self.model_dump(mode="json")
+        j["type"] = self.event_type
+        del j["event_type"]
+        return j
+
+
 class SpeakerLabelSuggestionEvent(MessageEvent):
     event_type: str = "speaker_label_suggestion"
     speaker_id: int

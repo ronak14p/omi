@@ -47,6 +47,8 @@ class MessageProvider extends ChangeNotifier {
   final AgentChatService _agentChatService = AgentChatService();
   Timer? _vmKeepaliveTimer;
   static const _keepaliveInterval = Duration(minutes: 5);
+  String? _pendingAgentInteractionId;
+  String? _pendingAgentActionSummary;
 
   bool isLoadingMessages = false;
   bool hasCachedMessages = false;
@@ -90,6 +92,35 @@ class MessageProvider extends ChangeNotifier {
   void stopVmKeepalive() {
     _vmKeepaliveTimer?.cancel();
     _vmKeepaliveTimer = null;
+  }
+
+  void _setPendingAgentConfirmation(String interactionId, String? summary) {
+    _pendingAgentInteractionId = interactionId;
+    _pendingAgentActionSummary = summary;
+  }
+
+  void _clearPendingAgentConfirmation() {
+    _pendingAgentInteractionId = null;
+    _pendingAgentActionSummary = null;
+  }
+
+  bool? _parseYesNoDecision(String text) {
+    final normalized = text.trim().toLowerCase();
+    if (normalized.isEmpty) return null;
+    const yesTokens = {'yes', 'y', 'yeah', 'yep', 'sure', 'ok', 'okay', 'confirm', 'approved'};
+    const noTokens = {'no', 'n', 'nope', 'cancel', 'stop', 'decline', 'deny'};
+
+    if (yesTokens.contains(normalized)) return true;
+    if (noTokens.contains(normalized)) return false;
+
+    final cleaned = normalized.replaceAll(RegExp(r'[^a-z\s]'), ' ').trim();
+    if (cleaned.isEmpty) return null;
+    final words = cleaned.split(RegExp(r'\s+')).where((w) => w.isNotEmpty).toList();
+    if (words.isEmpty) return null;
+
+    if (yesTokens.contains(words.first) || words.any((w) => yesTokens.contains(w))) return true;
+    if (noTokens.contains(words.first) || words.any((w) => noTokens.contains(w))) return false;
+    return null;
   }
 
   void setChatApps(List<App> apps) {
@@ -523,6 +554,37 @@ class MessageProvider extends ChangeNotifier {
       isPersonaChat: isPersonaChat,
     );
 
+    // Route voice through the same agent path when Claude Agent is enabled so
+    // spoken yes/no can satisfy pending confirmation state.
+    if (SharedPreferencesUtil().claudeAgentEnabled) {
+      try {
+        final transcript = (await transcribeVoiceMessage(file)).trim();
+        if (transcript.isEmpty) {
+          final context = MyApp.navigatorKey.currentContext;
+          if (context != null) {
+            AppSnackbar.showSnackbarError(context.l10n.transcriptionFailed);
+          }
+          return;
+        }
+
+        if (onFirstChunkRecived != null) {
+          onFirstChunkRecived();
+        }
+
+        setNextMessageOriginIsVoice(true);
+        addMessageLocally(transcript);
+        await sendMessageStreamToServer(transcript);
+        return;
+      } catch (e) {
+        Logger.error('Voice-to-agent transcription failed: $e');
+        final context = MyApp.navigatorKey.currentContext;
+        if (context != null) {
+          AppSnackbar.showSnackbarError(context.l10n.transcriptionFailed);
+        }
+        return;
+      }
+    }
+
     setShowTypingIndicator(true);
     var message = ServerMessage.empty();
     messages.add(message);
@@ -730,7 +792,39 @@ class MessageProvider extends ChangeNotifier {
       }
 
       // History is injected server-side by the agent-proxy from Firestore
-      final prompt = text;
+      var prompt = text;
+      var interactionId = const Uuid().v4();
+      final pendingInteractionId = _pendingAgentInteractionId;
+      if (pendingInteractionId != null) {
+        final decision = _parseYesNoDecision(text);
+        if (decision == null) {
+          message.text = _pendingAgentActionSummary ?? '';
+          notifyListeners();
+          setShowTypingIndicator(false);
+          setSendingMessage(false);
+          return;
+        }
+
+        final confirmation = await confirmAgentAction(interactionId: pendingInteractionId, approved: decision);
+        if (confirmation == null) {
+          final context = MyApp.navigatorKey.currentContext;
+          if (context != null) {
+            message.text = context.l10n.somethingWentWrongTryAgain;
+          }
+          notifyListeners();
+          setShowTypingIndicator(false);
+          setSendingMessage(false);
+          return;
+        }
+
+        interactionId = pendingInteractionId;
+        _clearPendingAgentConfirmation();
+        prompt = decision
+            ? 'User confirmed YES. Execute the approved backend action now and report the result.'
+            : 'User confirmed NO. Do not execute the backend action. Acknowledge cancellation and continue assisting.';
+      }
+
+      agentLog('[MessageProvider] agent interaction_id=$interactionId');
 
       const rotateMessages = [
         'Querying your data',
@@ -762,7 +856,7 @@ class MessageProvider extends ChangeNotifier {
       }
 
       bool gotContent = false;
-      await for (var event in _agentChatService.sendQuery(prompt)) {
+      await for (var event in _agentChatService.sendQuery(prompt, interactionId: interactionId)) {
         switch (event.type) {
           case AgentChatEventType.textDelta:
             gotContent = true;
@@ -813,6 +907,19 @@ class MessageProvider extends ChangeNotifier {
             }
             notifyListeners();
             break;
+          case AgentChatEventType.awaitConfirmation:
+            gotContent = true;
+            silenceTimer?.cancel();
+            rotateTimer?.cancel();
+            timer?.cancel();
+            timer = null;
+            flushBuffer();
+            final confirmationInteractionId = event.interactionId ?? interactionId;
+            final summary = event.text;
+            _setPendingAgentConfirmation(confirmationInteractionId, summary);
+            message.text = summary;
+            notifyListeners();
+            break;
           case AgentChatEventType.error:
             silenceTimer?.cancel();
             rotateTimer?.cancel();
@@ -835,7 +942,7 @@ class MessageProvider extends ChangeNotifier {
         final reconnected = await _agentChatService.reconnect();
         if (reconnected) {
           agentLog('[RETRY] Reconnected — retrying query');
-          await for (var event in _agentChatService.sendQuery(prompt)) {
+          await for (var event in _agentChatService.sendQuery(prompt, interactionId: interactionId)) {
             switch (event.type) {
               case AgentChatEventType.textDelta:
                 silenceTimer?.cancel();
@@ -881,6 +988,18 @@ class MessageProvider extends ChangeNotifier {
                 if (event.text.isNotEmpty) {
                   message.thinkings.add(event.text);
                 }
+                notifyListeners();
+                break;
+              case AgentChatEventType.awaitConfirmation:
+                silenceTimer?.cancel();
+                rotateTimer?.cancel();
+                timer?.cancel();
+                timer = null;
+                flushBuffer();
+                final confirmationInteractionId = event.interactionId ?? interactionId;
+                final summary = event.text;
+                _setPendingAgentConfirmation(confirmationInteractionId, summary);
+                message.text = summary;
                 notifyListeners();
                 break;
               case AgentChatEventType.error:

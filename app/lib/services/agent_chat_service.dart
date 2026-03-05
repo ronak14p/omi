@@ -28,13 +28,14 @@ void agentLog(String msg) {
   } catch (_) {}
 }
 
-enum AgentChatEventType { textDelta, toolActivity, result, error, status }
+enum AgentChatEventType { textDelta, toolActivity, result, error, status, awaitConfirmation }
 
 class AgentChatEvent {
   final AgentChatEventType type;
   final String text;
+  final String? interactionId;
 
-  AgentChatEvent(this.type, this.text);
+  AgentChatEvent(this.type, this.text, {this.interactionId});
 }
 
 class AgentChatService {
@@ -131,6 +132,17 @@ class AgentChatService {
                 final message = msg['message'] as String? ?? text;
                 _eventController?.add(AgentChatEvent(AgentChatEventType.status, message));
                 break;
+              case 'await_confirmation':
+                final summary = msg['summary'] as String? ?? text;
+                final interactionId = msg['interaction_id'] as String?;
+                _eventController?.add(
+                  AgentChatEvent(
+                    AgentChatEventType.awaitConfirmation,
+                    summary,
+                    interactionId: interactionId,
+                  ),
+                );
+                break;
               case 'result':
                 agentLog('[TIMING] *** RESULT *** +${elapsed}ms (total query time)');
                 _queryStopwatch?.stop();
@@ -187,7 +199,7 @@ class AgentChatService {
     }
   }
 
-  Stream<AgentChatEvent> sendQuery(String prompt) {
+  Stream<AgentChatEvent> sendQuery(String prompt, {String? interactionId}) {
     _eventController?.close();
     _eventController = StreamController<AgentChatEvent>();
 
@@ -200,7 +212,11 @@ class AgentChatService {
     _queryStopwatch = Stopwatch()..start();
     _firstTextReceived = false;
     agentLog('[TIMING] === QUERY START === (${prompt.length} chars)');
-    _channel!.sink.add(jsonEncode({'type': 'query', 'prompt': prompt}));
+    final payload = <String, dynamic>{'type': 'query', 'prompt': prompt};
+    if (interactionId != null && interactionId.isNotEmpty) {
+      payload['interaction_id'] = interactionId;
+    }
+    _channel!.sink.add(jsonEncode(payload));
     agentLog('[TIMING] query sent +${_queryStopwatch!.elapsedMilliseconds}ms');
 
     // Start response timeout — if no event arrives within 45s, connection is dead

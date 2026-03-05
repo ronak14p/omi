@@ -96,6 +96,73 @@ const playwrightCli = join(__dirname, "node_modules", "@playwright", "mcp", "cli
 // --- Firebase token (passed from desktop app for backend API calls) ---
 let userFirebaseToken = null;
 let backendTools = [];
+let activeInteractionId = null;
+let activeWsSend = null;
+const awaitingConfirmationInteractions = new Set();
+
+function summarizeToolAction(toolName, params) {
+  if (!params || typeof params !== "object") {
+    return `Execute backend action: ${toolName}`;
+  }
+
+  const entries = Object.entries(params)
+    .filter(([key]) => key !== "config")
+    .slice(0, 3)
+    .map(([key, value]) => `${key}=${String(value).slice(0, 60)}`);
+
+  if (entries.length === 0) {
+    return `Execute backend action: ${toolName}`;
+  }
+  return `Execute backend action: ${toolName} (${entries.join(", ")})`;
+}
+
+async function ensureAgentActionProposed(interactionId, summary, toolName) {
+  if (!interactionId || !userFirebaseToken) return;
+  try {
+    await fetch(`${BACKEND_URL}/v1/agent/actions/propose`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${userFirebaseToken}`,
+      },
+      body: JSON.stringify({
+        interaction_id: interactionId,
+        summary,
+        proposed_tools: [toolName],
+        requires_confirmation: true,
+      }),
+    });
+  } catch (err) {
+    console.log(`[agent-actions] propose failed: ${err.message}`);
+  }
+}
+
+async function getAgentActionSummary(interactionId, fallbackSummary) {
+  if (!interactionId || !userFirebaseToken) return fallbackSummary;
+  try {
+    const resp = await fetch(`${BACKEND_URL}/v1/agent/actions/${interactionId}`, {
+      headers: { Authorization: `Bearer ${userFirebaseToken}` },
+    });
+    if (!resp.ok) return fallbackSummary;
+    const data = await resp.json();
+    return data?.action?.summary || fallbackSummary;
+  } catch (err) {
+    console.log(`[agent-actions] summary lookup failed: ${err.message}`);
+    return fallbackSummary;
+  }
+}
+
+function emitAwaitConfirmation(interactionId, summary) {
+  if (!interactionId || !activeWsSend) return;
+  if (awaitingConfirmationInteractions.has(interactionId)) return;
+  awaitingConfirmationInteractions.add(interactionId);
+  const prompt = `Should I complete this task with the backend agent? ${summary} Reply yes or no.`;
+  activeWsSend({
+    type: "await_confirmation",
+    interaction_id: interactionId,
+    summary: prompt,
+  });
+}
 
 // --- Database Setup (lazy — opened on first use or after upload) ---
 let db = null;
@@ -481,9 +548,68 @@ async function fetchAndRegisterBackendTools() {
                 "Content-Type": "application/json",
                 Authorization: `Bearer ${userFirebaseToken}`,
               },
-              body: JSON.stringify({ tool_name: def.name, params }),
+              body: JSON.stringify({
+                tool_name: def.name,
+                params,
+                interaction_id: activeInteractionId || null,
+              }),
             });
             const result = await execResp.json();
+            const actionSummary = summarizeToolAction(def.name, params);
+
+            if (!execResp.ok) {
+              const detail = result?.detail || result?.error || `HTTP ${execResp.status}`;
+              const detailText = typeof detail === "string" ? detail : JSON.stringify(detail);
+
+              // First side-effecting call for this interaction usually lands here before user confirmation.
+              if (
+                activeInteractionId &&
+                execResp.status === 404 &&
+                detailText.includes("Agent action state not found")
+              ) {
+                await ensureAgentActionProposed(activeInteractionId, actionSummary, def.name);
+                emitAwaitConfirmation(activeInteractionId, actionSummary);
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Awaiting user confirmation before executing ${def.name}.`,
+                  }],
+                };
+              }
+
+              if (
+                activeInteractionId &&
+                execResp.status === 403 &&
+                detailText.includes("requires explicit confirmation")
+              ) {
+                const summary = await getAgentActionSummary(activeInteractionId, actionSummary);
+                emitAwaitConfirmation(activeInteractionId, summary);
+                return {
+                  content: [{
+                    type: "text",
+                    text: `Awaiting user confirmation before executing ${def.name}.`,
+                  }],
+                };
+              }
+
+              if (
+                execResp.status === 409 &&
+                detailText.includes("declined")
+              ) {
+                return {
+                  content: [{
+                    type: "text",
+                    text: "The user declined this action. Continue assisting without executing it.",
+                  }],
+                };
+              }
+
+              return { content: [{ type: "text", text: `Error (${execResp.status}): ${detailText}` }] };
+            }
+
+            if (activeInteractionId) {
+              awaitingConfirmationInteractions.delete(activeInteractionId);
+            }
             if (result.error) {
               return { content: [{ type: "text", text: `Error: ${result.error}` }] };
             }
@@ -1286,6 +1412,7 @@ function startServer() {
         ws.send(JSON.stringify(msg));
       }
     };
+    activeWsSend = send;
 
     ws.on("message", async (data) => {
       let msg;
@@ -1321,6 +1448,9 @@ function startServer() {
         case "query": {
           lastActivityAt = Date.now();
           const prompt = msg.prompt;
+          activeInteractionId = typeof msg.interaction_id === "string" && msg.interaction_id.trim()
+            ? msg.interaction_id.trim()
+            : null;
           log(`Query: ${prompt?.slice(0, 100)}`);
 
           // Start session if not started yet
@@ -1377,6 +1507,7 @@ function startServer() {
 
     ws.on("close", () => {
       log("Client disconnected");
+      activeWsSend = null;
       if (session) {
         session.messageQueue.end();
         session.query.close();
@@ -1387,6 +1518,7 @@ function startServer() {
 
     ws.on("error", (err) => {
       log(`WebSocket error: ${err.message}`);
+      activeWsSend = null;
     });
 
     // Signal readiness

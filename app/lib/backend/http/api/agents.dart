@@ -44,3 +44,69 @@ Future<void> sendAgentKeepalive() async {
     Logger.debug('sendAgentKeepalive failed: $e');
   }
 }
+
+Future<AgentActionState?> proposeAgentAction({
+  required String interactionId,
+  required String summary,
+  List<String> proposedTools = const [],
+  bool requiresConfirmation = true,
+}) async {
+  final response = await makeApiCall(
+    url: '${Env.apiBaseUrl}v1/agent/actions/propose',
+    headers: {},
+    method: 'POST',
+    body: jsonEncode({
+      'interaction_id': interactionId,
+      'summary': summary,
+      'proposed_tools': proposedTools,
+      'requires_confirmation': requiresConfirmation,
+    }),
+  );
+  if (response == null || response.statusCode != 200) {
+    return null;
+  }
+  return AgentActionState.fromJson(jsonDecode(response.body));
+}
+
+Future<AgentActionState?> confirmAgentAction({
+  required String interactionId,
+  required bool approved,
+}) async {
+  final response = await makeApiCall(
+    url: '${Env.apiBaseUrl}v1/agent/actions/confirm',
+    headers: {},
+    method: 'POST',
+    body: jsonEncode({
+      'interaction_id': interactionId,
+      'decision': approved ? 'yes' : 'no',
+    }),
+  );
+  if (response == null || response.statusCode != 200) {
+    return null;
+  }
+
+  final body = jsonDecode(response.body);
+  return AgentActionState(
+    interactionId: body['interaction_id'] ?? interactionId,
+    status: body['status'] ?? '',
+    lastDecision: body['decision'],
+  );
+}
+
+Future<AgentActionState?> getAgentActionState(String interactionId) async {
+  final response = await makeApiCall(
+    url: '${Env.apiBaseUrl}v1/agent/actions/$interactionId',
+    headers: {},
+    method: 'GET',
+    body: '',
+  );
+  if (response == null || response.statusCode != 200) {
+    return null;
+  }
+
+  final body = jsonDecode(response.body);
+  if (body['has_action'] != true || body['action'] == null) {
+    return null;
+  }
+  return AgentActionState.fromJson(body['action']);
+}

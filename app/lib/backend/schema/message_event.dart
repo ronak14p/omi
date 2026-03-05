@@ -22,6 +22,8 @@ abstract class MessageEvent {
         return PhotoProcessingEvent.fromJson(json);
       case 'photo_described':
         return PhotoDescribedEvent.fromJson(json);
+      case 'request_capture_photo':
+        return RequestCapturePhotoEvent.fromJson(json);
       case 'speaker_label_suggestion':
         return SpeakerLabelSuggestionEvent.fromJson(json);
       case 'onboarding_question':
@@ -139,6 +141,26 @@ class PhotoDescribedEvent extends MessageEvent {
       photoId: json['photo_id'],
       description: json['description'],
       discarded: json['discarded'] ?? false,
+    );
+  }
+}
+
+class RequestCapturePhotoEvent extends MessageEvent {
+  final String interactionId;
+  final String reason;
+  final String? triggerText;
+
+  RequestCapturePhotoEvent({
+    required this.interactionId,
+    this.reason = 'activation_phrase',
+    this.triggerText,
+  }) : super(eventType: 'request_capture_photo');
+
+  factory RequestCapturePhotoEvent.fromJson(Map<String, dynamic> json) {
+    return RequestCapturePhotoEvent(
+      interactionId: json['interaction_id'] ?? '',
+      reason: json['reason'] ?? 'activation_phrase',
+      triggerText: json['trigger_text'],
     );
   }
 }

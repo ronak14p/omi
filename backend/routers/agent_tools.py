@@ -11,14 +11,17 @@ Endpoints:
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timezone
+from typing import List, Optional
 
 import google.auth
 import google.auth.transport.requests
 import httpx
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
+from database import redis_db
 from database.users import get_agent_vm
 from utils.other.endpoints import get_current_user_uid
 from utils.retrieval.agentic import agent_config_context, CORE_TOOLS
@@ -30,6 +33,44 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 GCE_PROJECT = "based-hardware"
+AGENT_ACTION_TTL_SECONDS = int(os.getenv("MVP_AGENT_ACTION_TTL_SECONDS", "1800"))
+MVP_AGENT_CONFIRMATION_ENFORCED = os.getenv("MVP_AGENT_CONFIRMATION_ENFORCED", "true").lower() == "true"
+
+SIDE_EFFECT_HINTS = (
+    "create",
+    "update",
+    "delete",
+    "remove",
+    "send",
+    "post",
+    "write",
+    "edit",
+    "add",
+    "insert",
+    "schedule",
+    "book",
+    "purchase",
+    "pay",
+    "cancel",
+    "invite",
+    "email",
+    "message",
+    "upload",
+    "set_",
+    "modify",
+)
+READ_ONLY_HINTS = (
+    "get",
+    "list",
+    "search",
+    "find",
+    "fetch",
+    "read",
+    "query",
+    "retrieve",
+    "lookup",
+    "status",
+)
 
 
 # --------------- GCE helpers ---------------
@@ -139,6 +180,67 @@ async def _restart_vm_background(uid: str, vm_name: str, zone: str):
         _update_firestore_vm(uid, None, "error")
 
 
+def _utc_now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
+
+
+def _is_side_effecting_tool_name(tool_name: str) -> bool:
+    name = (tool_name or "").strip().lower()
+    if not name:
+        return False
+
+    if any(hint in name for hint in SIDE_EFFECT_HINTS):
+        return True
+    if any(hint in name for hint in READ_ONLY_HINTS):
+        return False
+
+    # Unknown tools default to non-mutating to avoid blocking read-only requests.
+    # Mutating tools should include explicit action verbs in their names.
+    return False
+
+
+def _get_confirmed_action_state_or_raise(uid: str, interaction_id: Optional[str]) -> dict:
+    if not interaction_id:
+        raise HTTPException(
+            status_code=400,
+            detail="interaction_id is required for side-effecting tools",
+        )
+
+    state = redis_db.get_agent_action_state(uid, interaction_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Agent action state not found")
+
+    status = state.get("status")
+    if status == "declined":
+        raise HTTPException(status_code=409, detail="Agent action was declined by user")
+    if status != "confirmed":
+        raise HTTPException(status_code=403, detail="Agent action requires explicit confirmation")
+
+    return state
+
+
+def _record_action_execution(uid: str, interaction_id: Optional[str], tool_name: str, success: bool, error: str = None):
+    if not interaction_id:
+        return
+
+    state = redis_db.get_agent_action_state(uid, interaction_id)
+    if not state:
+        return
+
+    executed_tools = state.get("executed_tools", [])
+    executed_tools.append(
+        {
+            "tool_name": tool_name,
+            "success": success,
+            "error": error,
+            "executed_at": _utc_now_iso(),
+        }
+    )
+    state["executed_tools"] = executed_tools
+    state["updated_at"] = _utc_now_iso()
+    redis_db.set_agent_action_state(uid, interaction_id, state, ttl=AGENT_ACTION_TTL_SECONDS)
+
+
 # --------------- endpoints ---------------
 
 
@@ -215,6 +317,82 @@ async def keepalive(uid: str = Depends(get_current_user_uid)):
         return {"ok": False, "reason": "unreachable"}
 
 
+class ProposeAgentActionRequest(BaseModel):
+    interaction_id: str
+    summary: str
+    proposed_tools: List[str] = Field(default_factory=list)
+    requires_confirmation: bool = True
+
+
+class ConfirmAgentActionRequest(BaseModel):
+    interaction_id: str
+    decision: str
+
+
+@router.post("/v1/agent/actions/propose")
+def propose_agent_action(
+    body: ProposeAgentActionRequest,
+    uid: str = Depends(get_current_user_uid),
+):
+    now = _utc_now_iso()
+    status = "awaiting_confirmation" if body.requires_confirmation else "confirmed"
+    state = {
+        "interaction_id": body.interaction_id,
+        "summary": body.summary,
+        "proposed_tools": body.proposed_tools,
+        "requires_confirmation": body.requires_confirmation,
+        "status": status,
+        "created_at": now,
+        "updated_at": now,
+        "confirmed_at": now if status == "confirmed" else None,
+        "declined_at": None,
+        "executed_tools": [],
+    }
+    redis_db.set_agent_action_state(uid, body.interaction_id, state, ttl=AGENT_ACTION_TTL_SECONDS)
+    return {
+        "interaction_id": body.interaction_id,
+        "status": status,
+        "summary": body.summary,
+        "requires_confirmation": body.requires_confirmation,
+    }
+
+
+@router.post("/v1/agent/actions/confirm")
+def confirm_agent_action(
+    body: ConfirmAgentActionRequest,
+    uid: str = Depends(get_current_user_uid),
+):
+    decision = (body.decision or "").strip().lower()
+    if decision not in ("yes", "no"):
+        raise HTTPException(status_code=400, detail="decision must be 'yes' or 'no'")
+
+    state = redis_db.get_agent_action_state(uid, body.interaction_id)
+    if not state:
+        raise HTTPException(status_code=404, detail="Agent action state not found")
+
+    now = _utc_now_iso()
+    state["status"] = "confirmed" if decision == "yes" else "declined"
+    state["confirmed_at"] = now if decision == "yes" else state.get("confirmed_at")
+    state["declined_at"] = now if decision == "no" else state.get("declined_at")
+    state["updated_at"] = now
+    state["last_decision"] = decision
+
+    redis_db.set_agent_action_state(uid, body.interaction_id, state, ttl=AGENT_ACTION_TTL_SECONDS)
+    return {
+        "interaction_id": body.interaction_id,
+        "status": state["status"],
+        "decision": decision,
+    }
+
+
+@router.get("/v1/agent/actions/{interaction_id}")
+def get_agent_action(interaction_id: str, uid: str = Depends(get_current_user_uid)):
+    state = redis_db.get_agent_action_state(uid, interaction_id)
+    if not state:
+        return {"has_action": False}
+    return {"has_action": True, "action": state}
+
+
 def _tool_schema(t) -> dict:
     """Extract a clean JSON schema from a LangChain tool."""
     schema = t.args_schema.model_json_schema() if t.args_schema else {}
@@ -257,7 +435,8 @@ def list_tools(uid: str = Depends(get_current_user_uid)):
 
 class ExecuteToolRequest(BaseModel):
     tool_name: str
-    params: dict = {}
+    params: dict = Field(default_factory=dict)
+    interaction_id: Optional[str] = None
 
 
 @router.post("/v1/agent/execute-tool")
@@ -291,6 +470,10 @@ async def execute_tool(
     if target is None:
         raise HTTPException(status_code=404, detail=f"Tool '{body.tool_name}' not found")
 
+    is_side_effecting = _is_side_effecting_tool_name(body.tool_name)
+    if MVP_AGENT_CONFIRMATION_ENFORCED and is_side_effecting:
+        _get_confirmed_action_state_or_raise(uid, body.interaction_id)
+
     # Strip config param if caller accidentally included it
     params = {k: v for k, v in body.params.items() if k != "config"}
 
@@ -301,7 +484,9 @@ async def execute_tool(
         else:
             # Pass config as second arg (LangChain RunnableConfig), not as tool input
             result = target.invoke(params, config=config)
+        _record_action_execution(uid, body.interaction_id, body.tool_name, success=True)
         return {"result": str(result)}
     except Exception as e:
         logger.error(f"❌ Error executing tool {body.tool_name}: {e}")
+        _record_action_execution(uid, body.interaction_id, body.tool_name, success=False, error=str(e))
         return {"error": str(e)}

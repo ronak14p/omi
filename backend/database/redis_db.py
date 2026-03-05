@@ -414,6 +414,26 @@ def get_in_progress_conversation_id(uid: str) -> str:
     return conversation_id.decode()
 
 
+def _agent_action_state_key(uid: str, interaction_id: str) -> str:
+    return f'users:{uid}:agent_actions:{interaction_id}'
+
+
+@try_catch_decorator
+def set_agent_action_state(uid: str, interaction_id: str, state: dict, ttl: int = 1800):
+    r.set(_agent_action_state_key(uid, interaction_id), json.dumps(state, default=str), ex=ttl)
+
+
+@try_catch_decorator
+def get_agent_action_state(uid: str, interaction_id: str) -> Optional[dict]:
+    data = r.get(_agent_action_state_key(uid, interaction_id))
+    return json.loads(data.decode('utf-8')) if data else None
+
+
+@try_catch_decorator
+def clear_agent_action_state(uid: str, interaction_id: str):
+    r.delete(_agent_action_state_key(uid, interaction_id))
+
+
 def set_conversation_meeting_id(conversation_id: str, meeting_id: str, ttl: int = 86400):
     """Store the meeting_id for a conversation. TTL defaults to 24 hours."""
     r.set(f'conversation:{conversation_id}:meeting_id', meeting_id)
