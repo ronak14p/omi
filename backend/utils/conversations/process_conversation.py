@@ -3,26 +3,19 @@ import re
 import threading
 import uuid
 import logging
-import asyncio
-from datetime import timezone, timedelta, datetime
+from datetime import timezone, datetime
 from typing import Union, Tuple, List, Optional
 
 from fastapi import HTTPException
 
 from database import redis_db
-import database.memories as memories_db
 import database.conversations as conversations_db
 import database.notifications as notification_db
 import database.users as users_db
 import database.tasks as tasks_db
-import database.trends as trends_db
-import database.action_items as action_items_db
 import database.folders as folders_db
 import database.calendar_meetings as calendar_db
-from database.vector_db import find_similar_memories, upsert_memory_vector, delete_memory_vector
-from utils.llm.memories import resolve_memory_conflict
 from database.vector_db import upsert_vector2, update_vector_metadata
-from models.memories import MemoryDB, Memory
 from models.conversation import *
 from models.conversation import (
     ExternalIntegrationCreateConversation,
@@ -35,20 +28,15 @@ from models.conversation import CalendarMeetingContext
 from models.other import Person
 from models.task import Task, TaskStatus, TaskAction, TaskActionProvider
 from models.trend import Trend
-from models.notification_message import NotificationMessage
 from utils.llm.conversation_processing import (
     get_transcript_structure,
     should_discard_conversation,
     get_reprocess_transcript_structure,
     assign_conversation_to_folder,
-    extract_action_items,
 )
 from utils.analytics import record_usage
 from utils.llm.usage_tracker import track_usage, Features
-from utils.llm.memories import extract_memories_from_text, new_memories_extractor
 from utils.llm.external_integrations import summarize_experience_text
-from utils.llm.trends import trends_extractor
-from utils.llm.goals import extract_and_update_goal_progress
 from utils.llm.chat import (
     retrieve_metadata_from_text,
     retrieve_metadata_from_message,
@@ -61,8 +49,6 @@ from utils.notifications import send_notification
 from utils.other.hume import get_hume, HumeJobCallbackModel, HumeJobModelPredictionResponseModel
 from utils.retrieval.rag import retrieve_rag_conversation_context
 from utils.webhooks import conversation_created_webhook
-from utils.notifications import send_action_item_data_message
-from utils.task_sync import auto_sync_action_items_batch
 from utils.other.storage import precache_conversation_audio
 
 logger = logging.getLogger(__name__)
@@ -77,14 +63,6 @@ def _get_structured(
 ) -> Tuple[Structured, bool]:
     try:
         tz = notification_db.get_user_time_zone(uid)
-
-        # Fetch existing action items from past 2 days for deduplication
-        existing_action_items = None
-        try:
-            two_days_ago = datetime.now(timezone.utc) - timedelta(days=2)
-            existing_action_items = action_items_db.get_action_items(uid=uid, start_date=two_days_ago, limit=50)
-        except Exception as e:
-            logger.error(f"Error fetching existing action items for deduplication: {e}")
 
         # Extract calendar context from external_data
         calendar_context = None
@@ -104,15 +82,6 @@ def _get_structured(
                         conversation.started_at,
                         language_code,
                         tz,
-                        calendar_meeting_context=calendar_context,
-                    )
-                with track_usage(uid, Features.CONVERSATION_ACTION_ITEMS):
-                    structured.action_items = extract_action_items(
-                        conversation.text,
-                        conversation.started_at,
-                        language_code,
-                        tz,
-                        existing_action_items=existing_action_items,
                         calendar_meeting_context=calendar_context,
                     )
                 return structured, False
@@ -146,15 +115,6 @@ def _get_structured(
                     conversation.structured.title,
                     photos=conversation.photos,
                 )
-            with track_usage(uid, Features.CONVERSATION_ACTION_ITEMS):
-                structured.action_items = extract_action_items(
-                    transcript_text,
-                    conversation.started_at,
-                    language_code,
-                    tz,
-                    photos=conversation.photos,
-                    existing_action_items=existing_action_items,
-                )
             return structured, False
 
         # Compute conversation duration for discard heuristics
@@ -176,16 +136,6 @@ def _get_structured(
                 language_code,
                 tz,
                 photos=conversation.photos,
-                calendar_meeting_context=calendar_context,
-            )
-        with track_usage(uid, Features.CONVERSATION_ACTION_ITEMS):
-            structured.action_items = extract_action_items(
-                transcript_text,
-                conversation.started_at,
-                language_code,
-                tz,
-                photos=conversation.photos,
-                existing_action_items=existing_action_items,
                 calendar_meeting_context=calendar_context,
             )
         return structured, False
@@ -254,200 +204,6 @@ def _trigger_apps(
     # App-store summarization execution is removed in single-agent mode.
     del uid, is_reprocess, language_code, people
     conversation.apps_results = []
-
-
-def _update_goal_progress(uid: str, conversation: Conversation):
-    """Extract and update goal progress from conversation text."""
-    try:
-        # Get conversation text
-        text = ""
-        if conversation.structured and conversation.structured.overview:
-            text = conversation.structured.overview
-        elif conversation.transcript_segments:
-            text = " ".join([s.text for s in conversation.transcript_segments[:20]])
-
-        if not text or len(text) < 10:
-            return
-
-        # Use utility function to extract and update goal progress
-        with track_usage(uid, Features.GOALS):
-            extract_and_update_goal_progress(uid, text)
-    except Exception as e:
-        logger.error(f"[GOAL] Error updating progress: {e}")
-
-
-def _extract_memories(uid: str, conversation: Conversation):
-    with track_usage(uid, Features.MEMORIES):
-        _extract_memories_inner(uid, conversation)
-
-
-def _extract_memories_inner(uid: str, conversation: Conversation):
-    # Delete old memories for this conversation (if reprocessing)
-    # Also get the IDs to delete from Pinecone
-    existing_memory_ids = memories_db.get_memory_ids_for_conversation(uid, conversation.id)
-    for memory_id in existing_memory_ids:
-        delete_memory_vector(uid, memory_id)
-    memories_db.delete_memories_for_conversation(uid, conversation.id)
-
-    language = users_db.get_user_language_preference(uid)
-    new_memories: List[Memory] = []
-
-    # Extract memories based on conversation source
-    if conversation.source == ConversationSource.external_integration:
-        text_content = conversation.external_data.get('text')
-        if text_content and len(text_content) > 0:
-            text_source = conversation.external_data.get('text_source', 'other')
-            new_memories = extract_memories_from_text(uid, text_content, text_source, language=language)
-    else:
-        # For regular conversations with transcript segments
-        new_memories = new_memories_extractor(uid, conversation.transcript_segments, language=language)
-
-    is_locked = conversation.is_locked
-    parsed_memories = []
-    memories_to_delete = []
-
-    for memory in new_memories:
-        # Find similar existing memories
-        similar_matches = find_similar_memories(uid, memory.content, threshold=0.7, limit=3)
-
-        # Fetch content for each similar memory
-        similar_memories = []
-        for match in similar_matches:
-            memory_data = memories_db.get_memory(uid, match['memory_id'])
-            if memory_data:
-                similar_memories.append(
-                    {
-                        'memory_id': match['memory_id'],
-                        'category': match['category'],
-                        'score': match['score'],
-                        'content': memory_data.get('content', ''),
-                    }
-                )
-
-        if similar_memories:
-            resolution = resolve_memory_conflict(memory.content, similar_memories, language=language)
-
-            if resolution.action == 'keep_existing':
-                continue
-
-            elif resolution.action == 'merge':
-                # Replace existing memory with merged version
-                if resolution.merged_content:
-                    memories_to_delete.append(similar_memories[0]['memory_id'])
-                    memory.content = resolution.merged_content
-
-            elif resolution.action == 'keep_both':
-                pass
-
-        memory_db_obj = MemoryDB.from_memory(memory, uid, conversation.id, False)
-        memory_db_obj.is_locked = is_locked
-        parsed_memories.append(memory_db_obj)
-
-    for memory_id in memories_to_delete:
-        delete_memory_vector(uid, memory_id)
-        memories_db.delete_memory(uid, memory_id)
-
-    if len(parsed_memories) == 0:
-        logger.info(f"No memories extracted for conversation {conversation.id}")
-        return
-
-    logger.info(f"Saving {len(parsed_memories)} memories for conversation {conversation.id}")
-    memories_db.save_memories(uid, [fact.dict() for fact in parsed_memories])
-
-    for memory_db_obj in parsed_memories:
-        upsert_memory_vector(uid, memory_db_obj.id, memory_db_obj.content, memory_db_obj.category.value)
-
-    if len(parsed_memories) > 0:
-        record_usage(uid, memories_created=len(parsed_memories))
-
-        try:
-            from utils.llm.knowledge_graph import extract_knowledge_from_memory
-            from database.auth import get_user_name
-
-            user_name = get_user_name(uid)
-
-            from database.memories import set_memory_kg_extracted
-
-            for memory_db_obj in parsed_memories:
-                if memory_db_obj.kg_extracted:
-                    continue
-                extract_knowledge_from_memory(uid, memory_db_obj.content, memory_db_obj.id, user_name)
-                set_memory_kg_extracted(uid, memory_db_obj.id)
-        except Exception:
-            logging.exception("Error extracting knowledge graph from memory.")
-
-
-def send_new_memories_notification(user_id: str, memories: [MemoryDB]):
-    memories_str = ", ".join([memory.content for memory in memories])
-    message = f"New memories {memories_str}"
-    ai_message = NotificationMessage(
-        text=message,
-        from_integration='false',
-        type='text',
-        notification_type='new_fact',
-        navigate_to="/facts",
-    )
-
-    send_notification(user_id, "omi" + ' says', message, NotificationMessage.get_message_as_dict(ai_message))
-
-
-def _extract_trends(uid: str, conversation: Conversation):
-    with track_usage(uid, Features.TRENDS):
-        extracted_items = trends_extractor(uid, conversation)
-        parsed = [Trend(category=item.category, topics=[item.topic], type=item.type) for item in extracted_items]
-        trends_db.save_trends(conversation, parsed)
-
-
-def _save_action_items(uid: str, conversation: Conversation):
-    """
-    Save action items from a conversation to the dedicated action_items collection.
-    This runs in addition to storing them in the conversation for backward compatibility.
-    """
-    if not conversation.structured or not conversation.structured.action_items:
-        return
-
-    is_locked = conversation.is_locked
-    action_items_data = []
-    now = datetime.now(timezone.utc)
-
-    for action_item in conversation.structured.action_items:
-        action_item_data = {
-            'description': action_item.description,
-            'completed': action_item.completed,
-            'created_at': action_item.created_at or now,
-            'updated_at': action_item.updated_at or now,
-            'due_at': action_item.due_at,
-            'completed_at': action_item.completed_at,
-            'conversation_id': conversation.id,
-            'is_locked': is_locked,
-        }
-        action_items_data.append(action_item_data)
-
-    if action_items_data:
-        # Delete existing action items for this conversation first (in case of reprocessing)
-        action_items_db.delete_action_items_for_conversation(uid, conversation.id)
-        # Save new action items
-        action_item_ids = action_items_db.create_action_items_batch(uid, action_items_data)
-        logger.info(f"Saved {len(action_item_ids)} action items for conversation {conversation.id}")
-
-        # Send FCM data messages for action items with due dates
-        for idx, action_item in enumerate(conversation.structured.action_items):
-            if action_item.due_at and idx < len(action_item_ids):
-                action_item_id = action_item_ids[idx]
-                send_action_item_data_message(
-                    user_id=uid,
-                    action_item_id=action_item_id,
-                    description=action_item.description,
-                    due_at=action_item.due_at.isoformat(),
-                )
-
-        # Auto-sync to task integration
-        created_items = [{"id": aid, **data} for aid, data in zip(action_item_ids, action_items_data)]
-
-        def _run_auto_sync():
-            asyncio.run(auto_sync_action_items_batch(uid, created_items))
-
-        threading.Thread(target=_run_auto_sync, daemon=True).start()
 
 
 def save_structured_vector(uid: str, conversation: Conversation, update_only: bool = False):
@@ -585,10 +341,6 @@ def process_conversation(
             if not is_reprocess
             else None
         )
-        threading.Thread(target=_extract_memories, args=(uid, conversation)).start()
-        threading.Thread(target=_extract_trends, args=(uid, conversation)).start()
-        threading.Thread(target=_save_action_items, args=(uid, conversation)).start()
-        threading.Thread(target=_update_goal_progress, args=(uid, conversation)).start()
 
     # Create audio files from chunks if private cloud sync was enabled
     if not is_reprocess and conversation.private_cloud_sync_enabled:

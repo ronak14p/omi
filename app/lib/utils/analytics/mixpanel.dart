@@ -106,6 +106,19 @@ class MixpanelManager {
     );
   }
 
+  void logout() {
+    PlatformService.executeIfSupported(
+      PlatformService.isMixpanelSupported,
+      () {
+        if (PlatformService.isMixpanelNativelySupported) {
+          _mixpanel?.reset();
+        } else {
+          _mixpanelAnalytics?.userId = null;
+        }
+      },
+    );
+  }
+
   void identify() {
     PlatformService.executeIfSupported(
       PlatformService.isMixpanelSupported,

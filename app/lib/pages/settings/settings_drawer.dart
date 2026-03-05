@@ -172,7 +172,7 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
                 ),
                 _item(
                   icon: FontAwesomeIcons.chartLine,
-                  title: context.l10n.usage,
+                  title: context.l10n.viewUsage,
                   onTap: () async {
                     final usageProvider = context.read<UsageProvider>();
                     await usageProvider.fetchSubscription();
@@ -184,7 +184,7 @@ class _SettingsDrawerState extends State<SettingsDrawer> {
                   icon: FontAwesomeIcons.rightFromBracket,
                   iconColor: Colors.redAccent,
                   textColor: Colors.redAccent,
-                  title: context.l10n.logout,
+                  title: context.l10n.signOut,
                   onTap: _logout,
                 ),
                 const SizedBox(height: 20),

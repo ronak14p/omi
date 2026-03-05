@@ -513,13 +513,6 @@ class ConversationProvider extends ChangeNotifier {
     );
   }
 
-  void updateActionItemState(String convoId, bool state, int i, DateTime date) {
-    conversations.firstWhere((element) => element.id == convoId).structured.actionItems[i].completed = state;
-    groupedConversations[date]!.firstWhere((element) => element.id == convoId).structured.actionItems[i].completed =
-        state;
-    notifyListeners();
-  }
-
   Future getMoreConversationsFromServer() async {
     if (conversations.length % 50 != 0) return;
     if (isLoadingConversations) return;
@@ -711,109 +704,6 @@ class ConversationProvider extends ChangeNotifier {
 
   void setIsFetchingConversations(bool value) {
     isFetchingConversations = value;
-    notifyListeners();
-  }
-
-  // New Getter for Action Items Page
-  Map<ServerConversation, List<ActionItem>> get conversationsWithActiveActionItems {
-    final Map<ServerConversation, List<ActionItem>> result = {};
-    final List<ServerConversation> sourceList = conversations;
-
-    for (final convo in sourceList) {
-      if (convo.discarded && !showDiscardedConversations) continue;
-
-      final activeItems = convo.structured.actionItems.where((item) => !item.deleted).toList();
-      if (activeItems.isNotEmpty) {
-        result[convo] = activeItems;
-      }
-    }
-    return result;
-  }
-
-  Future<void> updateGlobalActionItemState(
-      ServerConversation conversation, String actionItemDescription, bool newState) async {
-    final convoId = conversation.id;
-    bool conversationFoundAndUpdated = false;
-
-    final originalConvoIndex = conversations.indexWhere((c) => c.id == convoId);
-    if (originalConvoIndex != -1) {
-      final itemIndex = conversations[originalConvoIndex]
-          .structured
-          .actionItems
-          .indexWhere((item) => item.description == actionItemDescription);
-      if (itemIndex != -1) {
-        conversations[originalConvoIndex].structured.actionItems[itemIndex].completed = newState;
-        conversationFoundAndUpdated = true;
-      }
-    }
-
-    var effectiveDate = conversation.startedAt ?? conversation.createdAt;
-    var dateKey = DateTime(effectiveDate.year, effectiveDate.month, effectiveDate.day);
-    if (groupedConversations.containsKey(dateKey)) {
-      final groupIndex = groupedConversations[dateKey]!.indexWhere((c) => c.id == convoId);
-      if (groupIndex != -1) {
-        final itemIndex = groupedConversations[dateKey]![groupIndex]
-            .structured
-            .actionItems
-            .indexWhere((item) => item.description == actionItemDescription);
-        if (itemIndex != -1) {
-          groupedConversations[dateKey]![groupIndex].structured.actionItems[itemIndex].completed = newState;
-        }
-      }
-    }
-
-    if (conversationFoundAndUpdated) {
-      // Find the item index for the server call
-      final itemIndex =
-          conversation.structured.actionItems.indexWhere((item) => item.description == actionItemDescription);
-      if (itemIndex != -1) {
-        await setConversationActionItemState(convoId, [itemIndex], [newState]);
-      }
-      notifyListeners();
-    } else {
-      Logger.debug("Error: Conversation or action item not found for updateGlobalActionItemState.");
-    }
-  }
-
-  void updateActionItemDescriptionInConversation(String conversationId, int itemIndex, String newDescription) {
-    final convoIndex = conversations.indexWhere((c) => c.id == conversationId);
-    if (convoIndex != -1) {
-      if (conversations[convoIndex].structured.actionItems.length > itemIndex) {
-        conversations[convoIndex].structured.actionItems[itemIndex].description = newDescription;
-      }
-    }
-
-    groupedConversations.forEach((date, convoList) {
-      final groupIndex = convoList.indexWhere((c) => c.id == conversationId);
-      if (groupIndex != -1) {
-        if (convoList[groupIndex].structured.actionItems.length > itemIndex) {
-          convoList[groupIndex].structured.actionItems[itemIndex].description = newDescription;
-        }
-      }
-    });
-
-    notifyListeners();
-  }
-
-  Future<void> deleteActionItemAndUpdateLocally(String conversationId, int itemIndex, ActionItem actionItem) async {
-    deleteConversationActionItem(conversationId, actionItem);
-
-    final convoIndex = conversations.indexWhere((c) => c.id == conversationId);
-    if (convoIndex != -1) {
-      if (conversations[convoIndex].structured.actionItems.length > itemIndex) {
-        conversations[convoIndex].structured.actionItems.removeAt(itemIndex);
-      }
-    }
-
-    groupedConversations.forEach((date, convoList) {
-      final groupConvoIndex = convoList.indexWhere((c) => c.id == conversationId);
-      if (groupConvoIndex != -1) {
-        if (convoList[groupConvoIndex].structured.actionItems.length > itemIndex) {
-          convoList[groupConvoIndex].structured.actionItems.removeAt(itemIndex);
-        }
-      }
-    });
-
     notifyListeners();
   }
 

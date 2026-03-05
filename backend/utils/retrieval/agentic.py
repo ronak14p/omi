@@ -11,7 +11,7 @@ import uuid
 import asyncio
 import contextvars
 from datetime import datetime, timezone
-from typing import List, Optional, AsyncGenerator, Any, Tuple
+from typing import Dict, List, Optional, AsyncGenerator, Any, Tuple
 
 import database.notifications as notification_db
 
@@ -81,6 +81,48 @@ CORE_TOOLS = [
     get_screen_activity_tool,
     search_screen_activity_tool,
 ]
+
+TOOL_CONFIRMATION_POLICIES: Dict[str, dict] = {
+    get_conversations_tool.name: {"mode": "never"},
+    search_conversations_tool.name: {"mode": "never"},
+    get_omi_product_info_tool.name: {"mode": "never"},
+    perplexity_web_search_tool.name: {"mode": "never"},
+    get_calendar_events_tool.name: {"mode": "never"},
+    create_calendar_event_tool.name: {"mode": "always"},
+    update_calendar_event_tool.name: {"mode": "always"},
+    delete_calendar_event_tool.name: {"mode": "always"},
+    get_gmail_messages_tool.name: {"mode": "never"},
+    get_apple_health_steps_tool.name: {"mode": "never"},
+    get_apple_health_sleep_tool.name: {"mode": "never"},
+    get_apple_health_heart_rate_tool.name: {"mode": "never"},
+    get_apple_health_workouts_tool.name: {"mode": "never"},
+    get_apple_health_summary_tool.name: {"mode": "never"},
+    search_files_tool.name: {"mode": "never"},
+    manage_daily_summary_tool.name: {
+        "mode": "conditional",
+        "mutating_actions": {"enable", "disable", "set_time"},
+    },
+    create_chart_tool.name: {"mode": "never"},
+    get_screen_activity_tool.name: {"mode": "never"},
+    search_screen_activity_tool.name: {"mode": "never"},
+}
+
+
+def get_tool_policy(tool_name: str) -> dict:
+    return TOOL_CONFIRMATION_POLICIES.get(tool_name, {"mode": "never"})
+
+
+def tool_requires_confirmation(tool_name: str, params: Optional[dict] = None) -> bool:
+    policy = get_tool_policy(tool_name)
+    mode = policy.get("mode", "never")
+
+    if mode == "always":
+        return True
+    if mode == "never":
+        return False
+
+    action = str((params or {}).get("action", "")).strip().lower()
+    return action in policy.get("mutating_actions", set())
 
 
 def get_tool_display_name(tool_name: str, tool_obj: Optional[Any] = None) -> str:

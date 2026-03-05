@@ -43,6 +43,7 @@ class MessageProvider extends ChangeNotifier {
   final AgentChatService _agentChatService = AgentChatService();
   Timer? _vmKeepaliveTimer;
   static const _keepaliveInterval = Duration(minutes: 5);
+  String? _activeAgentInteractionId;
   String? _pendingAgentInteractionId;
   String? _pendingAgentActionSummary;
 
@@ -88,6 +89,10 @@ class MessageProvider extends ChangeNotifier {
     _pendingAgentActionSummary = summary;
   }
 
+  void setActiveAgentInteraction(String? interactionId) {
+    _activeAgentInteractionId = interactionId;
+  }
+
   void _clearPendingAgentConfirmation() {
     _pendingAgentInteractionId = null;
     _pendingAgentActionSummary = null;
@@ -111,7 +116,6 @@ class MessageProvider extends ChangeNotifier {
     if (noTokens.contains(words.first) || words.any((w) => noTokens.contains(w))) return false;
     return null;
   }
-
 
   void setNextMessageOriginIsVoice(bool isVoice) {
     _isNextMessageFromVoice = isVoice;
@@ -415,7 +419,7 @@ class MessageProvider extends ChangeNotifier {
   Future<List<ServerMessage>> getMessagesFromServer({bool dropdownSelected = false}) async {
     final l10n = MyApp.navigatorKey.currentContext?.l10n;
     if (!hasCachedMessages) {
-      firstTimeLoadingText = l10n?.msgReadingMemories ?? 'Reading your memories...';
+      firstTimeLoadingText = l10n?.syncingMessages ?? 'Syncing messages with server...';
       notifyListeners();
     }
     setLoadingMessages(true);
@@ -423,7 +427,7 @@ class MessageProvider extends ChangeNotifier {
       dropdownSelected: dropdownSelected,
     );
     if (!hasCachedMessages) {
-      firstTimeLoadingText = l10n?.msgLearningMemories ?? 'Learning from your memories...';
+      firstTimeLoadingText = l10n?.reloadingConversations ?? 'Reloading conversations...';
       notifyListeners();
     }
     messages = mes;
@@ -443,6 +447,8 @@ class MessageProvider extends ChangeNotifier {
 
   Future clearChat() async {
     setClearingChat(true);
+    _activeAgentInteractionId = null;
+    _clearPendingAgentConfirmation();
     var mes = await clearChatServer();
     messages = mes;
     messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
@@ -484,6 +490,50 @@ class MessageProvider extends ChangeNotifier {
     }
     messages.add(message);
     notifyListeners();
+  }
+
+  void addActivationAssistantResponse({
+    required String interactionId,
+    required String text,
+    required String messageId,
+    String? triggerText,
+    String? triggerMessageId,
+  }) {
+    _activeAgentInteractionId = interactionId;
+
+    if (triggerText != null && triggerText.isNotEmpty && triggerMessageId != null && triggerMessageId.isNotEmpty) {
+      addMessage(
+        ServerMessage(
+          triggerMessageId,
+          DateTime.now(),
+          triggerText,
+          MessageSender.human,
+          MessageType.text,
+          null,
+          false,
+          [],
+          [],
+          [],
+          askForNps: false,
+        ),
+      );
+    }
+
+    addMessage(
+      ServerMessage(
+        messageId,
+        DateTime.now(),
+        text,
+        MessageSender.ai,
+        MessageType.text,
+        null,
+        false,
+        [],
+        [],
+        [],
+        askForNps: false,
+      ),
+    );
   }
 
   Future sendVoiceMessageStreamToServer(List<List<int>> audioBytes,
@@ -729,7 +779,7 @@ class MessageProvider extends ChangeNotifier {
 
       // History is injected server-side by the agent-proxy from Firestore
       var prompt = text;
-      var interactionId = const Uuid().v4();
+      var interactionId = _activeAgentInteractionId ?? const Uuid().v4();
       final pendingInteractionId = _pendingAgentInteractionId;
       if (pendingInteractionId != null) {
         final decision = _parseYesNoDecision(text);
@@ -760,6 +810,7 @@ class MessageProvider extends ChangeNotifier {
             : 'User confirmed NO. Do not execute the backend action. Acknowledge cancellation and continue assisting.';
       }
 
+      _activeAgentInteractionId = interactionId;
       agentLog('[MessageProvider] agent interaction_id=$interactionId');
 
       const rotateMessages = [
@@ -852,6 +903,7 @@ class MessageProvider extends ChangeNotifier {
             flushBuffer();
             final confirmationInteractionId = event.interactionId ?? interactionId;
             final summary = event.text;
+            _activeAgentInteractionId = confirmationInteractionId;
             _setPendingAgentConfirmation(confirmationInteractionId, summary);
             message.text = summary;
             notifyListeners();
@@ -934,6 +986,7 @@ class MessageProvider extends ChangeNotifier {
                 flushBuffer();
                 final confirmationInteractionId = event.interactionId ?? interactionId;
                 final summary = event.text;
+                _activeAgentInteractionId = confirmationInteractionId;
                 _setPendingAgentConfirmation(confirmationInteractionId, summary);
                 message.text = summary;
                 notifyListeners();

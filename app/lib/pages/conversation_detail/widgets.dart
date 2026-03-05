@@ -478,131 +478,6 @@ class GetSummaryWidgets extends StatelessWidget {
   }
 }
 
-class ActionItemsListWidget extends StatelessWidget {
-  const ActionItemsListWidget({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<ConversationDetailProvider>(builder: (context, provider, child) {
-      return Column(
-        children: [
-          provider.conversation.structured.actionItems.isNotEmpty
-              ? Row(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Text(
-                      context.l10n.actionItems,
-                      style: Theme.of(context).textTheme.titleLarge!.copyWith(fontSize: 26),
-                    ),
-                    IconButton(
-                      onPressed: () {
-                        Clipboard.setData(ClipboardData(
-                          text:
-                              '- ${provider.conversation.structured.actionItems.map((e) => e.description.decodeString).join('\n- ')}',
-                        ));
-                        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                          content: Text(context.l10n.actionItemsCopiedToClipboard),
-                          duration: const Duration(seconds: 2),
-                        ));
-                        MixpanelManager().copiedConversationDetails(provider.conversation, source: 'Action Items');
-                      },
-                      icon: const Icon(Icons.copy_rounded, color: Colors.white, size: 20),
-                    )
-                  ],
-                )
-              : const SizedBox.shrink(),
-          ListView.builder(
-            itemCount: provider.conversation.structured.actionItems.where((e) => !e.deleted).length,
-            shrinkWrap: true,
-            physics: const NeverScrollableScrollPhysics(),
-            itemBuilder: (context, idx) {
-              var item = provider.conversation.structured.actionItems.where((e) => !e.deleted).toList()[idx];
-              return Dismissible(
-                key: Key(item.description),
-                direction: DismissDirection.endToStart,
-                background: Container(
-                  alignment: Alignment.centerRight,
-                  padding: const EdgeInsets.only(right: 20.0),
-                  color: Colors.red,
-                  child: const Icon(Icons.delete, color: Colors.white),
-                ),
-                onDismissed: (direction) {
-                  var tempItem = provider.conversation.structured.actionItems[idx];
-                  var tempIdx = idx;
-                  provider.deleteActionItem(idx);
-                  provider.deleteActionItemPermanently(tempItem, tempIdx);
-                  MixpanelManager().deletedActionItem(provider.conversation);
-                  // ScaffoldMessenger.of(context)
-                  //     .showSnackBar(
-                  //       SnackBar(
-                  //         content: const Text('Action Item deleted successfully 🗑️'),
-                  //         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                  //         action: SnackBarAction(
-                  //           label: 'Undo',
-                  //           textColor: Colors.white,
-                  //           onPressed: () {
-                  //             provider.undoDeleteActionItem(idx);
-                  //           },
-                  //         ),
-                  //       ),
-                  //     )
-                  //     .closed
-                  //     .then((reason) {
-                  //   if (reason != SnackBarClosedReason.action) {
-                  //     provider.deleteActionItemPermanently(tempItem, tempIdx);
-                  //     MixpanelManager().deletedActionItem(provider.conversation);
-                  //   }
-                  // });
-                },
-                child: Padding(
-                  padding: const EdgeInsets.only(top: 10, bottom: 2),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.only(top: 6.0),
-                        child: SizedBox(
-                          height: 22.0,
-                          width: 22.0,
-                          child: Checkbox(
-                            shape: const CircleBorder(),
-                            value: item.completed,
-                            onChanged: (value) {
-                              if (value != null) {
-                                context.read<ConversationDetailProvider>().updateActionItemState(value, idx);
-                                setConversationActionItemState(provider.conversation.id, [idx], [value]);
-                                if (value) {
-                                  MixpanelManager().checkedActionItem(provider.conversation, idx);
-                                } else {
-                                  MixpanelManager().uncheckedActionItem(provider.conversation, idx);
-                                }
-                              }
-                            },
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 12),
-                      Expanded(
-                        child: SelectionArea(
-                          child: Text(
-                            item.description.decodeString,
-                            style: TextStyle(color: Colors.grey.shade300, fontSize: 16, height: 1.3),
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              );
-            },
-          ),
-        ],
-      );
-    });
-  }
-}
-
 class GetEditTextField extends StatefulWidget {
   final String conversationId;
   final String content;
@@ -748,7 +623,8 @@ class AppResultDetailWidget extends StatelessWidget {
                     children: [
                       Expanded(
                         child: RichText(
-                          text: TextSpan(style: const TextStyle(color: Colors.grey), text: context.l10n.noSummaryForApp),
+                          text:
+                              TextSpan(style: const TextStyle(color: Colors.grey), text: context.l10n.noSummaryForApp),
                         ),
                       ),
                     ],
@@ -780,7 +656,53 @@ class GetAppsWidgets extends StatelessWidget {
           mainAxisAlignment: MainAxisAlignment.start,
           crossAxisAlignment: summarizedApp == null ? CrossAxisAlignment.center : CrossAxisAlignment.start,
           children: summarizedApp == null
-              ? [child!]
+              ? [
+                  ListView(
+                    shrinkWrap: true,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      const SizedBox(height: 32),
+                      Text(
+                        context.l10n.noSummaryForConversation,
+                        style: Theme.of(context).textTheme.titleLarge!.copyWith(fontSize: 20),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 24),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Container(
+                            decoration: BoxDecoration(
+                              border: const GradientBoxBorder(
+                                gradient: LinearGradient(colors: [
+                                  Color.fromARGB(127, 208, 208, 208),
+                                  Color.fromARGB(127, 188, 99, 121),
+                                  Color.fromARGB(127, 86, 101, 182),
+                                  Color.fromARGB(127, 126, 190, 236)
+                                ]),
+                                width: 2,
+                              ),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: MaterialButton(
+                              onPressed:
+                                  provider.loadingReprocessConversation ? null : () => provider.reprocessConversation(),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                              child: Padding(
+                                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
+                                child: Text(
+                                  context.l10n.generateSummary,
+                                  style: const TextStyle(color: Colors.white, fontSize: 16),
+                                ),
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 32),
+                    ],
+                  ),
+                ]
               : [
                   // Show the summarized app
                   if (!provider.conversation.discarded) ...[
@@ -795,47 +717,6 @@ class GetAppsWidgets extends StatelessWidget {
                 ],
         );
       },
-      child: ListView(
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
-        children: [
-          const SizedBox(height: 32),
-          Text(
-            context.l10n.noSummaryForConversation,
-            style: Theme.of(context).textTheme.titleLarge!.copyWith(fontSize: 20),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 24),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                decoration: BoxDecoration(
-                  border: const GradientBoxBorder(
-                    gradient: LinearGradient(colors: [
-                      Color.fromARGB(127, 208, 208, 208),
-                      Color.fromARGB(127, 188, 99, 121),
-                      Color.fromARGB(127, 86, 101, 182),
-                      Color.fromARGB(127, 126, 190, 236)
-                    ]),
-                    width: 2,
-                  ),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: MaterialButton(
-                  onPressed: provider.loadingReprocessConversation ? null : () => provider.reprocessConversation(),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                  child: Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
-                      child: Text(context.l10n.generateSummary,
-                          style: const TextStyle(color: Colors.white, fontSize: 16))),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 32),
-        ],
-      ),
     );
   }
 }

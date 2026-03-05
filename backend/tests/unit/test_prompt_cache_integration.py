@@ -233,11 +233,6 @@ def _get_agentic_module():
     tool_names = [
         "get_conversations_tool",
         "search_conversations_tool",
-        "get_memories_tool",
-        "search_memories_tool",
-        "get_action_items_tool",
-        "create_action_item_tool",
-        "update_action_item_tool",
         "get_omi_product_info_tool",
         "perplexity_web_search_tool",
         "get_calendar_events_tool",
@@ -253,10 +248,12 @@ def _get_agentic_module():
         "search_files_tool",
         "manage_daily_summary_tool",
         "create_chart_tool",
+        "get_screen_activity_tool",
+        "search_screen_activity_tool",
     ]
     for name in tool_names:
         mock_tool = MagicMock()
-        mock_tool.name = name.replace("_tool", "")
+        mock_tool.name = name
         setattr(tools_pkg, name, mock_tool)
 
     return _load_module_from_file("utils.retrieval.agentic", BACKEND_DIR / "utils" / "retrieval" / "agentic.py")
@@ -465,10 +462,10 @@ def test_static_prefix_exceeds_minimum_cache_tokens():
 # ---------------------------------------------------------------------------
 
 
-def test_core_tools_has_22_tools():
-    """CORE_TOOLS must contain exactly 22 tools."""
+def test_core_tools_has_19_tools():
+    """CORE_TOOLS must contain exactly the MVP allowlisted tools."""
     agentic_mod = _get_agentic_module()
-    assert len(agentic_mod.CORE_TOOLS) == 22, f"CORE_TOOLS has {len(agentic_mod.CORE_TOOLS)} tools, expected 22"
+    assert len(agentic_mod.CORE_TOOLS) == 19, f"CORE_TOOLS has {len(agentic_mod.CORE_TOOLS)} tools, expected 19"
 
 
 def test_core_tools_list_creates_independent_copy():
@@ -491,9 +488,9 @@ def test_core_tools_list_creates_independent_copy():
     mock_tool.name = "custom_tool"
     tools_a.append(mock_tool)
 
-    assert len(tools_a) == 23
-    assert len(tools_b) == 22
-    assert len(agentic_mod.CORE_TOOLS) == 22, "CORE_TOOLS was mutated!"
+    assert len(tools_a) == 20
+    assert len(tools_b) == 19
+    assert len(agentic_mod.CORE_TOOLS) == 19, "CORE_TOOLS was mutated!"
 
 
 def test_core_tools_order_matches_exports():
@@ -504,28 +501,25 @@ def test_core_tools_order_matches_exports():
     agentic_mod = _get_agentic_module()
 
     expected_names = [
-        "get_conversations",
-        "search_conversations",
-        "get_memories",
-        "search_memories",
-        "get_action_items",
-        "create_action_item",
-        "update_action_item",
-        "get_omi_product_info",
-        "perplexity_web_search",
-        "get_calendar_events",
-        "create_calendar_event",
-        "update_calendar_event",
-        "delete_calendar_event",
-        "get_gmail_messages",
-        "get_apple_health_steps",
-        "get_apple_health_sleep",
-        "get_apple_health_heart_rate",
-        "get_apple_health_workouts",
-        "get_apple_health_summary",
-        "search_files",
-        "manage_daily_summary",
-        "create_chart",
+        "get_conversations_tool",
+        "search_conversations_tool",
+        "get_omi_product_info_tool",
+        "perplexity_web_search_tool",
+        "get_calendar_events_tool",
+        "create_calendar_event_tool",
+        "update_calendar_event_tool",
+        "delete_calendar_event_tool",
+        "get_gmail_messages_tool",
+        "get_apple_health_steps_tool",
+        "get_apple_health_sleep_tool",
+        "get_apple_health_heart_rate_tool",
+        "get_apple_health_workouts_tool",
+        "get_apple_health_summary_tool",
+        "search_files_tool",
+        "manage_daily_summary_tool",
+        "create_chart_tool",
+        "get_screen_activity_tool",
+        "search_screen_activity_tool",
     ]
 
     actual_names = [t.name for t in agentic_mod.CORE_TOOLS]
@@ -658,7 +652,7 @@ def test_execute_agentic_chat_tool_order_via_create_react_agent():
         assert len(captured_tools) == 1, "create_react_agent should have been called once"
         tools = captured_tools[0]
 
-        assert len(tools) == 22, f"Expected exactly 22 core tools, got {len(tools)}"
+        assert len(tools) == 19, f"Expected exactly 19 core tools, got {len(tools)}"
         core_names = [t.name for t in tools]
         expected_core = [t.name for t in agentic_mod.CORE_TOOLS]
         assert core_names == expected_core, "Core tools order was disrupted in execute path"
@@ -696,7 +690,7 @@ def test_execute_agentic_chat_no_app_tools_gives_core_only():
 
         assert len(captured_tools) == 1
         tools = captured_tools[0]
-        assert len(tools) == 22, f"Expected exactly 22 core tools, got {len(tools)}"
+        assert len(tools) == 19, f"Expected exactly 19 core tools, got {len(tools)}"
         assert [t.name for t in tools] == [t.name for t in agentic_mod.CORE_TOOLS]
     finally:
         agentic_mod.create_react_agent = original_create

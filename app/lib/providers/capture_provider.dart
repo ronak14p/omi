@@ -58,7 +58,9 @@ import 'package:omi/backend/schema/message_event.dart'
         PhotoDescribedEvent,
         FreemiumThresholdReachedEvent,
         SegmentsDeletedEvent,
-        RequestCapturePhotoEvent;
+        RequestCapturePhotoEvent,
+        InitialPhotoReadyEvent,
+        AssistantResponseEvent;
 
 class CaptureProvider extends ChangeNotifier
     with MessageNotifierMixin, WidgetsBindingObserver
@@ -1484,7 +1486,24 @@ class CaptureProvider extends ChangeNotifier
     }
 
     if (event is RequestCapturePhotoEvent) {
+      messageProvider?.setActiveAgentInteraction(event.interactionId);
       unawaited(_handleRequestCapturePhotoEvent(event));
+      return;
+    }
+
+    if (event is InitialPhotoReadyEvent) {
+      messageProvider?.setActiveAgentInteraction(event.interactionId);
+      return;
+    }
+
+    if (event is AssistantResponseEvent) {
+      messageProvider?.addActivationAssistantResponse(
+        interactionId: event.interactionId,
+        text: event.text,
+        messageId: event.messageId,
+        triggerText: event.triggerText,
+        triggerMessageId: event.triggerMessageId,
+      );
       return;
     }
   }

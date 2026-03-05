@@ -4,6 +4,7 @@ import Database from "better-sqlite3";
 import { z } from "zod";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
+import { createHash } from "crypto";
 import { createServer } from "http";
 import { WebSocketServer } from "ws";
 import { existsSync, mkdirSync, createWriteStream, statSync, renameSync, unlinkSync, writeFileSync } from "fs";
@@ -91,7 +92,6 @@ const SYNC_TABLES = new Set([
 
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const playwrightCli = join(__dirname, "node_modules", "@playwright", "mcp", "cli.js");
 
 // --- Firebase token (passed from desktop app for backend API calls) ---
 let userFirebaseToken = null;
@@ -116,7 +116,30 @@ function summarizeToolAction(toolName, params) {
   return `Execute backend action: ${toolName} (${entries.join(", ")})`;
 }
 
-async function ensureAgentActionProposed(interactionId, summary, toolName) {
+function normalizeToolParamsForHash(value) {
+  if (Array.isArray(value)) {
+    return value.map(normalizeToolParamsForHash);
+  }
+  if (value && typeof value === "object") {
+    return Object.keys(value)
+      .sort()
+      .reduce((acc, key) => {
+        acc[key] = normalizeToolParamsForHash(value[key]);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+function hashToolParams(toolName, params) {
+  const payload = JSON.stringify({
+    tool_name: toolName,
+    params: normalizeToolParamsForHash(params || {}),
+  });
+  return createHash("sha256").update(payload).digest("hex");
+}
+
+async function ensureAgentActionProposed(interactionId, summary, toolName, params) {
   if (!interactionId || !userFirebaseToken) return;
   try {
     await fetch(`${BACKEND_URL}/v1/agent/actions/propose`, {
@@ -129,6 +152,10 @@ async function ensureAgentActionProposed(interactionId, summary, toolName) {
         interaction_id: interactionId,
         summary,
         proposed_tools: [toolName],
+        proposed_tool_calls: [{
+          tool_name: toolName,
+          params_hash: hashToolParams(toolName, params),
+        }],
         requires_confirmation: true,
       }),
     });
@@ -190,28 +217,26 @@ function openDatabase() {
   // Rebuild schema + system prompt + MCP server
   const schema = getSchema();
   defaultSystemPrompt = `You are an AI assistant with access to the user's OMI desktop database and their connected services.
-This database contains their screen history (screenshots with OCR text), tasks, transcriptions, memories, and focus sessions.
+This database contains their screen history (screenshots with OCR text), transcription sessions, and related activity data.
 
 DATABASE SCHEMA:
 ${schema}
 
 TOOLS:
-- **execute_sql**: Run SQL queries on the database. SELECT auto-limits to 200 rows. Use for structured queries (app usage, time ranges, task management, aggregations).
+- **execute_sql**: Run SQL queries on the database. SELECT auto-limits to 200 rows. Use for structured queries (activity, time ranges, aggregations).
 - **semantic_search**: Vector similarity search on screenshot OCR text. Use for fuzzy/conceptual queries where exact keywords won't work.
-- **get_daily_recap**: Pre-formatted activity recap (apps, conversations, tasks) for a given time range. Use for "what did I do today/yesterday/this week" — single tool call, much faster than multiple SQL queries.
-- **Playwright browser tools**: You can navigate websites, click elements, fill forms, take screenshots, etc. Use when the user asks you to do something on the web.
-- **Backend tools** (calendar, gmail, health, conversations, memories, action items, web search, etc.): Use these when the user asks about their calendar events, emails, health data, past conversations, or wants to search the web. These tools connect to the user's real accounts.
+- **get_daily_recap**: Pre-formatted activity recap (apps and conversations) for a given time range. Use for "what did I do today/yesterday/this week" queries.
+- **Backend tools** (calendar, Gmail, health, conversations, notification settings, web search): Use these when the user asks about connected services or needs account-backed data.
 
 GUIDELINES:
-- For "what did I do today/yesterday/this week" queries, use get_daily_recap — it's a single tool call that returns a formatted summary of apps, conversations, and tasks. Much faster than multiple execute_sql calls.
+- For "what did I do today/yesterday/this week" queries, use get_daily_recap first.
 - Only use get_conversations_tool when the user asks about specific conversation transcripts or content details. For activity summaries, get_daily_recap is faster.
 - For time-filtered queries on screenshots, prefer range comparisons: WHERE timestamp >= datetime('now', 'start of day', '-1 day', 'localtime') AND timestamp < datetime('now', 'start of day', 'localtime'). Avoid wrapping the column in date() or strftime() in WHERE clauses — it's slower on large tables.
 - Screenshots have: timestamp, appName, windowTitle, ocrText, embedding (600K+ rows — always filter by timestamp range)
-- Action items have: description, completed, deleted, priority, category, source, dueAt, createdAt
 - Transcription sessions have: title, overview, startedAt, finishedAt, source
-- For task queries, use action_items table
 - For conversation queries, use transcription_sessions + transcription_segments
-- For calendar, email, health data — use the backend tools (get_calendar_events_tool, get_gmail_messages_tool, etc.)
+- For calendar, email, health data, or notification settings, use the backend tools rather than inventing answers.
+- Never imply you can write files, run shell commands, or control a browser directly. Backend mutations must go through confirmed backend tools.
 - Be concise and helpful. Format results clearly.`;
 
   rebuildMcpServer();
@@ -567,7 +592,7 @@ async function fetchAndRegisterBackendTools() {
                 execResp.status === 404 &&
                 detailText.includes("Agent action state not found")
               ) {
-                await ensureAgentActionProposed(activeInteractionId, actionSummary, def.name);
+                await ensureAgentActionProposed(activeInteractionId, actionSummary, def.name, params);
                 emitAwaitConfirmation(activeInteractionId, actionSummary);
                 return {
                   content: [{
@@ -582,6 +607,7 @@ async function fetchAndRegisterBackendTools() {
                 execResp.status === 403 &&
                 detailText.includes("requires explicit confirmation")
               ) {
+                await ensureAgentActionProposed(activeInteractionId, actionSummary, def.name, params);
                 const summary = await getAgentActionSummary(activeInteractionId, actionSummary);
                 emitAwaitConfirmation(activeInteractionId, summary);
                 return {
@@ -655,31 +681,11 @@ async function handleQuery({ prompt, systemPrompt, cwd, send, abortController })
     model: "claude-opus-4-6",
     abortController,
     systemPrompt: systemPrompt || defaultSystemPrompt,
-    allowedTools: [
-      "Read",
-      "Write",
-      "Edit",
-      "Bash",
-      "Glob",
-      "Grep",
-      "WebSearch",
-      "WebFetch",
-    ],
-    permissionMode: "bypassPermissions",
-    allowDangerouslySkipPermissions: true,
+    allowedTools: ["WebSearch", "WebFetch"],
     maxTurns: undefined,
     cwd: cwd || process.env.HOME || "/",
     mcpServers: {
       "omi-tools": omiServer,
-      "playwright": {
-        command: process.execPath,
-        args: [
-          playwrightCli,
-          "--user-data-dir", join(__dirname, "chrome-profile"),
-          "--headless",
-          "--no-sandbox",
-        ],
-      },
     },
   };
 
@@ -779,17 +785,11 @@ function startPersistentSession(send, log) {
     model: "claude-sonnet-4-6",
     abortController: sessionAbort,
     systemPrompt: defaultSystemPrompt,
-    allowedTools: ["Read", "Write", "Edit", "Bash", "Glob", "Grep", "WebSearch", "WebFetch"],
-    permissionMode: "bypassPermissions",
-    allowDangerouslySkipPermissions: true,
+    allowedTools: ["WebSearch", "WebFetch"],
     maxTurns: undefined,
     cwd: process.env.HOME || "/",
     mcpServers: {
       "omi-tools": omiServer,
-      "playwright": {
-        command: process.execPath,
-        args: [playwrightCli, "--user-data-dir", join(__dirname, "chrome-profile"), "--headless", "--no-sandbox"],
-      },
     },
   };
 

@@ -5,6 +5,7 @@
 
 // For public marketplace, use the configured API base URL or fallback to production
 const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'https://api.omi.me';
+const WEB_APPS_ENABLED = process.env.NEXT_PUBLIC_WEB_APPS_ENABLED === 'true';
 
 /**
  * Fetch approved apps for the public marketplace
@@ -33,6 +34,10 @@ export async function getApprovedApps(): Promise<{
     money: number;
   }>;
 }> {
+  if (!WEB_APPS_ENABLED) {
+    return { plugins: [], stats: [] };
+  }
+
   try {
     const response = await fetch(`${API_BASE_URL}/v1/approved-apps?include_reviews=true`, {
       next: { revalidate: 300 }, // Cache for 5 minutes
@@ -231,6 +236,10 @@ export interface V2SingleCapabilityResponse {
  * @param includeReviews - Whether to include review data (default: false)
  */
 export async function getAppsV2(includeReviews = false): Promise<V2AppsResponse> {
+  if (!WEB_APPS_ENABLED) {
+    return { groups: [], meta: { capabilities: [], groupCount: 0, limit: 20, offset: 0 } };
+  }
+
   try {
     const url = `${API_BASE_URL}/v2/apps${includeReviews ? '?include_reviews=true' : ''}`;
     const response = await fetch(url, {
@@ -263,6 +272,22 @@ export async function getAppsByCapability(
   limit = 50,
   includeReviews = false
 ): Promise<V2SingleCapabilityResponse> {
+  if (!WEB_APPS_ENABLED) {
+    return {
+      data: [],
+      pagination: {
+        total: 0,
+        count: 0,
+        offset: 0,
+        limit,
+        hasNext: false,
+        hasPrevious: false,
+        links: { next: null, previous: null },
+      },
+      capability: { id: capability, title: capability },
+    };
+  }
+
   try {
     const params = new URLSearchParams({
       capability,
@@ -323,6 +348,10 @@ export async function getAppsByCapability(
  * @param includeReviews - Whether to include review/rating data (default: false)
  */
 export async function getAllAppsV2(includeReviews = false): Promise<V2AppData[]> {
+  if (!WEB_APPS_ENABLED) {
+    return [];
+  }
+
   try {
     const allApps: V2AppData[] = [];
     const { groups } = await getAppsV2(includeReviews);

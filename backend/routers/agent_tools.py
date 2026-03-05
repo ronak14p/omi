@@ -10,6 +10,8 @@ Endpoints:
 """
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -24,7 +26,7 @@ from pydantic import BaseModel, Field
 from database import redis_db
 from database.users import get_agent_vm
 from utils.other.endpoints import get_current_user_uid
-from utils.retrieval.agentic import agent_config_context, CORE_TOOLS
+from utils.retrieval.agentic import agent_config_context, CORE_TOOLS, get_tool_policy, tool_requires_confirmation
 from utils.log_sanitizer import sanitize
 
 logger = logging.getLogger(__name__)
@@ -34,43 +36,6 @@ router = APIRouter()
 GCE_PROJECT = "based-hardware"
 AGENT_ACTION_TTL_SECONDS = int(os.getenv("MVP_AGENT_ACTION_TTL_SECONDS", "1800"))
 MVP_AGENT_CONFIRMATION_ENFORCED = os.getenv("MVP_AGENT_CONFIRMATION_ENFORCED", "true").lower() == "true"
-
-SIDE_EFFECT_HINTS = (
-    "create",
-    "update",
-    "delete",
-    "remove",
-    "send",
-    "post",
-    "write",
-    "edit",
-    "add",
-    "insert",
-    "schedule",
-    "book",
-    "purchase",
-    "pay",
-    "cancel",
-    "invite",
-    "email",
-    "message",
-    "upload",
-    "set_",
-    "modify",
-)
-READ_ONLY_HINTS = (
-    "get",
-    "list",
-    "search",
-    "find",
-    "fetch",
-    "read",
-    "query",
-    "retrieve",
-    "lookup",
-    "status",
-)
-
 
 # --------------- GCE helpers ---------------
 
@@ -183,22 +148,39 @@ def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _is_side_effecting_tool_name(tool_name: str) -> bool:
-    name = (tool_name or "").strip().lower()
-    if not name:
+def _normalize_for_hash(value):
+    if isinstance(value, dict):
+        return {k: _normalize_for_hash(value[k]) for k in sorted(value)}
+    if isinstance(value, list):
+        return [_normalize_for_hash(item) for item in value]
+    return value
+
+
+def _compute_tool_call_params_hash(tool_name: str, params: dict) -> str:
+    payload = {
+        "tool_name": tool_name,
+        "params": _normalize_for_hash(params),
+    }
+    raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()
+
+
+def _state_approves_tool_call(state: dict, tool_name: str, params_hash: str) -> bool:
+    proposed_tool_calls = state.get("proposed_tool_calls") or []
+    if proposed_tool_calls:
+        for approved_call in proposed_tool_calls:
+            if approved_call.get("tool_name") != tool_name:
+                continue
+            approved_hash = approved_call.get("params_hash")
+            if approved_hash is None or approved_hash == params_hash:
+                return True
         return False
 
-    if any(hint in name for hint in SIDE_EFFECT_HINTS):
-        return True
-    if any(hint in name for hint in READ_ONLY_HINTS):
-        return False
-
-    # Unknown tools default to non-mutating to avoid blocking read-only requests.
-    # Mutating tools should include explicit action verbs in their names.
-    return False
+    proposed_tools = state.get("proposed_tools") or []
+    return tool_name in proposed_tools
 
 
-def _get_confirmed_action_state_or_raise(uid: str, interaction_id: Optional[str]) -> dict:
+def _get_confirmed_action_state_or_raise(uid: str, interaction_id: Optional[str], tool_name: str, params: dict) -> dict:
     if not interaction_id:
         raise HTTPException(
             status_code=400,
@@ -214,6 +196,10 @@ def _get_confirmed_action_state_or_raise(uid: str, interaction_id: Optional[str]
         raise HTTPException(status_code=409, detail="Agent action was declined by user")
     if status != "confirmed":
         raise HTTPException(status_code=403, detail="Agent action requires explicit confirmation")
+
+    params_hash = _compute_tool_call_params_hash(tool_name, params)
+    if not _state_approves_tool_call(state, tool_name, params_hash):
+        raise HTTPException(status_code=403, detail="Agent action requires explicit confirmation for this tool")
 
     return state
 
@@ -316,10 +302,16 @@ async def keepalive(uid: str = Depends(get_current_user_uid)):
         return {"ok": False, "reason": "unreachable"}
 
 
+class ProposedToolCall(BaseModel):
+    tool_name: str
+    params_hash: Optional[str] = None
+
+
 class ProposeAgentActionRequest(BaseModel):
     interaction_id: str
     summary: str
     proposed_tools: List[str] = Field(default_factory=list)
+    proposed_tool_calls: List[ProposedToolCall] = Field(default_factory=list)
     requires_confirmation: bool = True
 
 
@@ -334,11 +326,16 @@ def propose_agent_action(
     uid: str = Depends(get_current_user_uid),
 ):
     now = _utc_now_iso()
+    proposed_tool_calls = body.proposed_tool_calls or [
+        ProposedToolCall(tool_name=tool_name) for tool_name in body.proposed_tools
+    ]
+    proposed_tools = body.proposed_tools or [tool_call.tool_name for tool_call in proposed_tool_calls]
     status = "awaiting_confirmation" if body.requires_confirmation else "confirmed"
     state = {
         "interaction_id": body.interaction_id,
         "summary": body.summary,
-        "proposed_tools": body.proposed_tools,
+        "proposed_tools": proposed_tools,
+        "proposed_tool_calls": [tool_call.model_dump() for tool_call in proposed_tool_calls],
         "requires_confirmation": body.requires_confirmation,
         "status": status,
         "created_at": now,
@@ -352,6 +349,7 @@ def propose_agent_action(
         "interaction_id": body.interaction_id,
         "status": status,
         "summary": body.summary,
+        "proposed_tools": proposed_tools,
         "requires_confirmation": body.requires_confirmation,
     }
 
@@ -397,6 +395,7 @@ def _tool_schema(t) -> dict:
     schema = t.args_schema.model_json_schema() if t.args_schema else {}
     props = schema.get("properties", {})
     required = list(schema.get("required", []))
+    policy = get_tool_policy(t.name)
 
     # Strip the 'config' parameter — it's internal LangChain plumbing
     props.pop("config", None)
@@ -411,6 +410,7 @@ def _tool_schema(t) -> dict:
             "properties": props,
             "required": required,
         },
+        "confirmation_policy": policy.get("mode", "never"),
     }
 
 
@@ -454,12 +454,11 @@ async def execute_tool(
     if target is None:
         raise HTTPException(status_code=404, detail=f"Tool '{body.tool_name}' not found")
 
-    is_side_effecting = _is_side_effecting_tool_name(body.tool_name)
-    if MVP_AGENT_CONFIRMATION_ENFORCED and is_side_effecting:
-        _get_confirmed_action_state_or_raise(uid, body.interaction_id)
-
     # Strip config param if caller accidentally included it
     params = {k: v for k, v in body.params.items() if k != "config"}
+    requires_confirmation = tool_requires_confirmation(body.tool_name, params)
+    if MVP_AGENT_CONFIRMATION_ENFORCED and requires_confirmation:
+        _get_confirmed_action_state_or_raise(uid, body.interaction_id, body.tool_name, params)
 
     try:
         # Prefer async coroutine if available (app tools), else sync invoke

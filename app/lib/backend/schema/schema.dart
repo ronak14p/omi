@@ -1,6 +1,5 @@
 // Barrel file for all schema exports
 export 'action_item.dart';
-export 'app.dart';
 export 'conversation.dart';
 export 'geolocation.dart';
 export 'memory.dart';

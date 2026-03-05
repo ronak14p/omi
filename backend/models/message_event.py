@@ -159,6 +159,34 @@ class RequestCapturePhotoEvent(MessageEvent):
         return j
 
 
+class InitialPhotoReadyEvent(MessageEvent):
+    event_type: str = "initial_photo_ready"
+    interaction_id: str
+    photo_id: str
+
+    def to_json(self):
+        j = self.model_dump(mode="json")
+        j["type"] = self.event_type
+        del j["event_type"]
+        return j
+
+
+class AssistantResponseEvent(MessageEvent):
+    event_type: str = "assistant_response"
+    interaction_id: str
+    text: str
+    message_id: str
+    trigger_text: Optional[str] = None
+    trigger_message_id: Optional[str] = None
+    conversation_id: Optional[str] = None
+
+    def to_json(self):
+        j = self.model_dump(mode="json")
+        j["type"] = self.event_type
+        del j["event_type"]
+        return j
+
+
 class SpeakerLabelSuggestionEvent(MessageEvent):
     event_type: str = "speaker_label_suggestion"
     speaker_id: int

@@ -283,62 +283,6 @@ Future<bool> setConversationEventsState(
   return response.statusCode == 200;
 }
 
-Future<bool> setConversationActionItemState(
-  String conversationId,
-  List<int> actionItemsIdx,
-  List<bool> values,
-) async {
-  print(jsonEncode({
-    'items_idx': actionItemsIdx,
-    'values': values,
-    'conversation_id': conversationId,
-  }));
-  var response = await makeApiCall(
-    url: '${Env.apiBaseUrl}v1/conversations/$conversationId/action-items',
-    headers: {},
-    method: 'PATCH',
-    body: jsonEncode({
-      'items_idx': actionItemsIdx,
-      'values': values,
-    }),
-  );
-  if (response == null) return false;
-  Logger.debug('setConversationActionItemState: ${response.body}');
-  return response.statusCode == 200;
-}
-
-Future<bool> updateActionItemDescription(
-    String conversationId, String oldDescription, String newDescription, int idx) async {
-  var body = {
-    'old_description': oldDescription,
-    'description': newDescription,
-  };
-  var response = await makeApiCall(
-    url: '${Env.apiBaseUrl}v1/conversations/$conversationId/action-items/$idx',
-    headers: {},
-    method: 'PATCH',
-    body: jsonEncode(body),
-  );
-  if (response == null) return false;
-  Logger.debug('updateActionItemDescription: ${response.body}');
-  return response.statusCode == 200;
-}
-
-Future<bool> deleteConversationActionItem(String conversationId, ActionItem item) async {
-  var response = await makeApiCall(
-    url: '${Env.apiBaseUrl}v1/conversations/$conversationId/action-items',
-    headers: {},
-    method: 'DELETE',
-    body: jsonEncode({
-      'completed': item.completed,
-      'description': item.description,
-    }),
-  );
-  if (response == null) return false;
-  Logger.debug('deleteConversationActionItem: ${response.body}');
-  return response.statusCode == 204;
-}
-
 //this is expected to return complete memories
 Future<List<ServerConversation>> sendStorageToBackend(File file, String sdCardDateTimeString) async {
   try {
@@ -470,31 +414,6 @@ Future<ActionItemsResponse> getActionItems({
     Logger.debug('getActionItems error ${response.statusCode}');
     return ActionItemsResponse(actionItems: [], hasMore: false);
   }
-}
-
-Future<List<App>> getConversationSuggestedApps(String conversationId) async {
-  var response = await makeApiCall(
-    url: '${Env.apiBaseUrl}v1/conversations/$conversationId/suggested-apps',
-    headers: {},
-    method: 'GET',
-    body: '',
-  );
-
-  if (response == null) return [];
-  Logger.debug('getConversationSuggestedApps: ${response.body}');
-  if (response.statusCode == 200) {
-    var data = jsonDecode(response.body);
-    return (data['suggested_apps'] as List<dynamic>).map((appData) => App.fromJson(appData)).toList();
-  }
-  return [];
-}
-
-Future<bool> updateActionItemStateByMetadata(
-  String conversationId,
-  int itemIndex,
-  bool newState,
-) async {
-  return await setConversationActionItemState(conversationId, [itemIndex], [newState]);
 }
 
 // *********************************

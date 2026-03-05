@@ -53,8 +53,10 @@ for attr in [
     "set_user_data_protection_level",
     "get_generic_cache",
     "set_generic_cache",
+    "get_user_has_soniox_speech_profile",
     "remove_user_soniox_speech_profile",
     "set_speech_profile_duration",
+    "set_user_has_soniox_speech_profile",
     "r",
 ]:
     setattr(redis_mod, attr, MagicMock())
@@ -103,9 +105,11 @@ storage_mod.delete_all_conversation_recordings = MagicMock()
 storage_mod.get_speech_sample_signed_urls = MagicMock()
 storage_mod.delete_user_person_speech_samples = MagicMock()
 storage_mod.delete_user_person_speech_sample = MagicMock()
+storage_mod.get_profile_audio_if_exists = MagicMock()
 
 endpoints_module = types.ModuleType("utils.other.endpoints")
 endpoints_module.get_current_user_uid = lambda: "test-user"
+endpoints_module.timeit = lambda fn: fn
 sys.modules["utils.other.endpoints"] = endpoints_module
 
 from fastapi import FastAPI

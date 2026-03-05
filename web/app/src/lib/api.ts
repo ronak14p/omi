@@ -39,6 +39,39 @@ import type {
 
 // Always use proxy to avoid CORS (browser → proxy → api.omi.me)
 const API_BASE_URL = '/api/proxy';
+const WEB_APPS_ENABLED = process.env.NEXT_PUBLIC_WEB_APPS_ENABLED === 'true';
+const APPS_PLATFORM_DISABLED_MESSAGE = 'Apps platform is removed from the MVP web surface.';
+
+function getEmptyAppsGroupedResponse(): AppsGroupedResponse {
+  return {
+    groups: [],
+    meta: {
+      capabilities: [],
+      groupCount: 0,
+      limit: 20,
+      offset: 0,
+    },
+  };
+}
+
+function getEmptyAppsSearchResponse(): AppsSearchResponse {
+  return {
+    data: [],
+    pagination: {
+      total: 0,
+      offset: 0,
+      limit: 20,
+      hasMore: false,
+    },
+    filters: {},
+  };
+}
+
+function assertWebAppsEnabled(): void {
+  if (!WEB_APPS_ENABLED) {
+    throw new Error(APPS_PLATFORM_DISABLED_MESSAGE);
+  }
+}
 
 /**
  * Make an authenticated API request
@@ -817,6 +850,10 @@ export async function getAppsGrouped(params: {
   offset?: number;
   limit?: number;
 } = {}): Promise<AppsGroupedResponse> {
+  if (!WEB_APPS_ENABLED) {
+    return getEmptyAppsGroupedResponse();
+  }
+
   const { capability, offset = 0, limit = 20 } = params;
 
   const queryParams = new URLSearchParams({
@@ -835,6 +872,10 @@ export async function getAppsGrouped(params: {
  * Search apps with filters
  */
 export async function searchApps(params: AppsSearchParams = {}): Promise<AppsSearchResponse> {
+  if (!WEB_APPS_ENABLED) {
+    return getEmptyAppsSearchResponse();
+  }
+
   const queryParams = new URLSearchParams();
 
   if (params.q) queryParams.set('q', params.q);
@@ -854,6 +895,9 @@ export async function searchApps(params: AppsSearchParams = {}): Promise<AppsSea
  * Get popular apps
  */
 export async function getPopularApps(): Promise<App[]> {
+  if (!WEB_APPS_ENABLED) {
+    return [];
+  }
   return fetchWithAuth<App[]>('/v1/apps/popular');
 }
 
@@ -861,6 +905,9 @@ export async function getPopularApps(): Promise<App[]> {
  * Get a single app by ID
  */
 export async function getApp(appId: string): Promise<App> {
+  if (!WEB_APPS_ENABLED) {
+    throw new Error(`${APPS_PLATFORM_DISABLED_MESSAGE} (${appId})`);
+  }
   return fetchWithAuth<App>(`/v1/apps/${appId}`);
 }
 
@@ -868,6 +915,9 @@ export async function getApp(appId: string): Promise<App> {
  * Get app categories
  */
 export async function getAppCategories(): Promise<AppCategory[]> {
+  if (!WEB_APPS_ENABLED) {
+    return [];
+  }
   return fetchWithAuth<AppCategory[]>('/v1/app-categories');
 }
 
@@ -875,6 +925,9 @@ export async function getAppCategories(): Promise<AppCategory[]> {
  * Get app capabilities
  */
 export async function getAppCapabilities(): Promise<AppCapability[]> {
+  if (!WEB_APPS_ENABLED) {
+    return [];
+  }
   return fetchWithAuth<AppCapability[]>('/v1/app-capabilities');
 }
 
@@ -882,6 +935,7 @@ export async function getAppCapabilities(): Promise<AppCapability[]> {
  * Enable (install) an app
  */
 export async function enableApp(appId: string): Promise<{ status: string }> {
+  assertWebAppsEnabled();
   return fetchWithAuth<{ status: string }>(`/v1/apps/enable?app_id=${appId}`, {
     method: 'POST',
   });
@@ -891,6 +945,7 @@ export async function enableApp(appId: string): Promise<{ status: string }> {
  * Disable (uninstall) an app
  */
 export async function disableApp(appId: string): Promise<{ status: string }> {
+  assertWebAppsEnabled();
   return fetchWithAuth<{ status: string }>(`/v1/apps/disable?app_id=${appId}`, {
     method: 'POST',
   });
@@ -924,6 +979,7 @@ export async function createApp(
   data: CreateAppRequest & { deleted?: boolean; price?: number; thumbnails?: string[]; uid?: string },
   imageFile?: File
 ): Promise<{ app_id: string }> {
+  assertWebAppsEnabled();
   let token: string | null = null;
 
   try {
@@ -970,6 +1026,7 @@ export async function updateApp(
   data: Partial<CreateAppRequest>,
   imageFile?: File
 ): Promise<void> {
+  assertWebAppsEnabled();
   let token: string | null = null;
 
   try {
@@ -1013,6 +1070,7 @@ export async function updateApp(
  * Delete an app
  */
 export async function deleteApp(appId: string): Promise<void> {
+  assertWebAppsEnabled();
   await fetchWithAuth(`/v1/apps/${appId}`, {
     method: 'DELETE',
   });
@@ -1025,6 +1083,7 @@ export async function changeAppVisibility(
   appId: string,
   isPrivate: boolean
 ): Promise<void> {
+  assertWebAppsEnabled();
   await fetchWithAuth(`/v1/apps/${appId}/change-visibility?private=${isPrivate}`, {
     method: 'PATCH',
   });
@@ -1036,6 +1095,7 @@ export async function changeAppVisibility(
 export async function uploadAppThumbnail(
   file: File
 ): Promise<ThumbnailUploadResponse> {
+  assertWebAppsEnabled();
   let token: string | null = null;
 
   try {
@@ -1078,6 +1138,7 @@ export async function generateAppDescription(
   name: string,
   currentDescription: string
 ): Promise<string> {
+  assertWebAppsEnabled();
   const response = await fetchWithAuth<GenerateDescriptionResponse>('/v1/app/generate-description', {
     method: 'POST',
     body: JSON.stringify({ name, description: currentDescription }),
@@ -1093,6 +1154,7 @@ export async function generateAppDescriptionAndEmoji(
   name: string,
   prompt: string
 ): Promise<{ description: string; emoji: string }> {
+  assertWebAppsEnabled();
   try {
     const response = await fetchWithAuth<{ description: string; emoji: string }>(
       '/v1/app/generate-description-emoji',
@@ -1117,6 +1179,9 @@ export async function generateAppDescriptionAndEmoji(
  * Note: This endpoint may not exist in all API versions, returns empty array on 404
  */
 export async function getNotificationScopes(): Promise<NotificationScope[]> {
+  if (!WEB_APPS_ENABLED) {
+    return [];
+  }
   try {
     const token = await getIdToken();
     if (!token) return [];
@@ -1140,6 +1205,9 @@ export async function getNotificationScopes(): Promise<NotificationScope[]> {
  * Note: This endpoint may not exist in all API versions, returns empty array on 404
  */
 export async function getPaymentPlans(): Promise<PaymentPlan[]> {
+  if (!WEB_APPS_ENABLED) {
+    return [];
+  }
   try {
     const token = await getIdToken();
     if (!token) return [];
@@ -1162,6 +1230,9 @@ export async function getPaymentPlans(): Promise<PaymentPlan[]> {
  * Get API keys for an app
  */
 export async function getAppApiKeys(appId: string): Promise<AppApiKey[]> {
+  if (!WEB_APPS_ENABLED) {
+    return [];
+  }
   return fetchWithAuth<AppApiKey[]>(`/v1/apps/${appId}/api-keys`);
 }
 
@@ -1169,6 +1240,7 @@ export async function getAppApiKeys(appId: string): Promise<AppApiKey[]> {
  * Create new API key for an app
  */
 export async function createAppApiKey(appId: string): Promise<AppApiKey> {
+  assertWebAppsEnabled();
   return fetchWithAuth<AppApiKey>(`/v1/apps/${appId}/api-keys`, {
     method: 'POST',
   });
@@ -1178,6 +1250,7 @@ export async function createAppApiKey(appId: string): Promise<AppApiKey> {
  * Delete API key for an app
  */
 export async function deleteAppApiKey(appId: string, keyId: string): Promise<void> {
+  assertWebAppsEnabled();
   await fetchWithAuth(`/v1/apps/${appId}/api-keys/${keyId}`, {
     method: 'DELETE',
   });

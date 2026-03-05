@@ -24,6 +24,10 @@ abstract class MessageEvent {
         return PhotoDescribedEvent.fromJson(json);
       case 'request_capture_photo':
         return RequestCapturePhotoEvent.fromJson(json);
+      case 'initial_photo_ready':
+        return InitialPhotoReadyEvent.fromJson(json);
+      case 'assistant_response':
+        return AssistantResponseEvent.fromJson(json);
       case 'speaker_label_suggestion':
         return SpeakerLabelSuggestionEvent.fromJson(json);
       case 'onboarding_question':
@@ -161,6 +165,52 @@ class RequestCapturePhotoEvent extends MessageEvent {
       interactionId: json['interaction_id'] ?? '',
       reason: json['reason'] ?? 'activation_phrase',
       triggerText: json['trigger_text'],
+    );
+  }
+}
+
+class InitialPhotoReadyEvent extends MessageEvent {
+  final String interactionId;
+  final String photoId;
+
+  InitialPhotoReadyEvent({
+    required this.interactionId,
+    required this.photoId,
+  }) : super(eventType: 'initial_photo_ready');
+
+  factory InitialPhotoReadyEvent.fromJson(Map<String, dynamic> json) {
+    return InitialPhotoReadyEvent(
+      interactionId: json['interaction_id'] ?? '',
+      photoId: json['photo_id'] ?? '',
+    );
+  }
+}
+
+class AssistantResponseEvent extends MessageEvent {
+  final String interactionId;
+  final String text;
+  final String messageId;
+  final String? triggerText;
+  final String? triggerMessageId;
+  final String? conversationId;
+
+  AssistantResponseEvent({
+    required this.interactionId,
+    required this.text,
+    required this.messageId,
+    this.triggerText,
+    this.triggerMessageId,
+    this.conversationId,
+  }) : super(eventType: 'assistant_response');
+
+  factory AssistantResponseEvent.fromJson(Map<String, dynamic> json) {
+    return AssistantResponseEvent(
+      interactionId: json['interaction_id'] ?? '',
+      text: json['text'] ?? '',
+      messageId: json['message_id'] ?? '',
+      triggerText: json['trigger_text'],
+      triggerMessageId: json['trigger_message_id'],
+      conversationId: json['conversation_id'],
     );
   }
 }

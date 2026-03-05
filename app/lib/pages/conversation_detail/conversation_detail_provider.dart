@@ -7,6 +7,7 @@ import 'package:flutter_provider_utilities/flutter_provider_utilities.dart';
 
 import 'package:omi/backend/http/api/audio.dart';
 import 'package:omi/backend/http/api/conversations.dart';
+import 'package:omi/backend/http/api/users.dart';
 import 'package:omi/backend/preferences.dart';
 import 'package:omi/backend/schema/conversation.dart';
 import 'package:omi/backend/schema/structured.dart';
@@ -143,30 +144,6 @@ class ConversationDetailProvider extends ChangeNotifier with MessageNotifierMixi
 
   void updateEventState(bool state, int i) {
     conversation.structured.events[i].created = state;
-    notifyListeners();
-  }
-
-  void updateActionItemState(bool state, int i) {
-    conversation.structured.actionItems[i].completed = state;
-    notifyListeners();
-  }
-
-  List<ActionItem> deletedActionItems = [];
-
-  void deleteActionItem(int i) {
-    deletedActionItems.add(conversation.structured.actionItems[i]);
-    conversation.structured.actionItems.removeAt(i);
-    notifyListeners();
-  }
-
-  void undoDeleteActionItem(int idx) {
-    conversation.structured.actionItems.insert(idx, deletedActionItems.removeLast());
-    notifyListeners();
-  }
-
-  void deleteActionItemPermanently(ActionItem item, int itemIdx) {
-    deletedActionItems.removeWhere((element) => element == item);
-    deleteConversationActionItem(conversation.id, item);
     notifyListeners();
   }
 

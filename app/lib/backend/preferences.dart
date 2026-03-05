@@ -136,6 +136,14 @@ class SharedPreferencesUtil {
 
   bool get locationEnabled => getBool('locationEnabled');
 
+  int get enabledAppsCount => getInt('enabledAppsCount', defaultValue: 0);
+
+  set enabledAppsCount(int value) => saveInt('enabledAppsCount', value);
+
+  int get enabledAppsIntegrationsCount => getInt('enabledAppsIntegrationsCount', defaultValue: 0);
+
+  set enabledAppsIntegrationsCount(int value) => saveInt('enabledAppsIntegrationsCount', value);
+
   //---------------------- Developer Settings ---------------------------------//
 
   String get webhookOnConversationCreated => getString('webhookOnConversationCreated');

@@ -32,6 +32,7 @@ from utils.speaker_assignment import (
     should_update_speaker_to_person_map,
 )
 import database.conversations as conversations_db
+import database.chat as chat_db
 import database.calendar_meetings as calendar_db
 import database.users as user_db
 from database.users import get_user_transcription_preferences
@@ -49,10 +50,13 @@ from models.conversation import (
     Structured,
     TranscriptSegment,
 )
+from models.chat import ChatSession, Message, MessageSender, MessageType
 from models.message_event import (
+    AssistantResponseEvent,
     ConversationEvent,
     FREEMIUM_ACTION_SETUP_ON_DEVICE_STT,
     FreemiumThresholdReachedEvent,
+    InitialPhotoReadyEvent,
     LastConversationEvent,
     MessageEvent,
     MessageServiceStatusEvent,
@@ -72,6 +76,7 @@ from utils.notifications import send_credit_limit_notification, send_silent_user
 from utils.other import endpoints as auth
 from utils.other.storage import get_profile_audio_if_exists, get_user_has_speech_profile
 from utils.pusher import connect_to_trigger_pusher
+from utils.llm.mvp_interaction import generate_activation_assistant_response
 from utils.speaker_identification import detect_speaker_from_text
 from utils.stt.streaming import (
     SPEECH_PROFILE_FIXED_DURATION,
@@ -146,6 +151,69 @@ def _is_initial_visual_activation_request(text: str) -> bool:
     if any(token in normalized for token in ACTIVATION_WAKE_PHRASE_TOKENS):
         return True
     return normalized.startswith("what am i looking at") or normalized.startswith("what is this")
+
+
+def _ensure_single_agent_chat_session(uid: str) -> str:
+    chat_session = chat_db.get_chat_session(uid, app_id=None)
+    if chat_session:
+        return chat_session['id']
+
+    new_session = ChatSession(
+        id=str(uuid.uuid4()),
+        created_at=datetime.now(timezone.utc),
+    )
+    chat_db.add_chat_session(uid, new_session.dict())
+    return new_session.id
+
+
+def _store_chat_message(uid: str, chat_session_id: str, message: Message) -> Message:
+    chat_db.add_message(uid, message.dict())
+    chat_db.add_message_to_chat_session(uid, chat_session_id, message.id)
+    return message
+
+
+async def _generate_activation_chat_response(
+    uid: str,
+    conversation_id: str,
+    interaction_state: dict,
+    recent_segments: List[TranscriptSegment],
+    photo_description: str,
+) -> Tuple[Optional[Message], Message]:
+    assistant_text = await generate_activation_assistant_response(
+        trigger_text=interaction_state.get("trigger_text", ""),
+        recent_segments=recent_segments,
+        photo_description=photo_description,
+    )
+    if not assistant_text:
+        assistant_text = "I captured the first image, but the scene is still unclear. What should I focus on next?"
+
+    chat_session_id = _ensure_single_agent_chat_session(uid)
+
+    trigger_message = None
+    trigger_text = interaction_state.get("trigger_text")
+    trigger_message_id = interaction_state.get("trigger_message_id")
+    if trigger_text and trigger_message_id:
+        trigger_message = Message(
+            id=trigger_message_id,
+            text=trigger_text,
+            created_at=datetime.now(timezone.utc),
+            sender=MessageSender.human,
+            type=MessageType.text,
+            chat_session_id=chat_session_id,
+        )
+        _store_chat_message(uid, chat_session_id, trigger_message)
+
+    assistant_message = Message(
+        id=str(uuid.uuid4()),
+        text=assistant_text,
+        created_at=datetime.now(timezone.utc),
+        sender=MessageSender.ai,
+        type=MessageType.text,
+        memories_id=[conversation_id],
+        chat_session_id=chat_session_id,
+    )
+    _store_chat_message(uid, chat_session_id, assistant_message)
+    return trigger_message, assistant_message
 
 
 class CustomSttMode(str, Enum):
@@ -328,6 +396,7 @@ async def _stream_handler(
     current_conversation_id = None
     activation_photo_requested_conversations: Set[str] = set()
     activation_interaction_ids: Dict[str, str] = {}
+    activation_interactions: Dict[str, dict] = {}
 
     freemium_threshold_sent = False  # Track if we've sent the freemium threshold notification
 
@@ -425,6 +494,33 @@ async def _stream_handler(
         if not websocket_active:
             return
         return spawn(_asend_message_event(msg))
+
+    async def _dispatch_activation_assistant_response(
+        conversation: Conversation,
+        interaction_state: dict,
+        initial_photo: ConversationPhoto,
+    ):
+        trigger_message, assistant_message = await _generate_activation_chat_response(
+            uid=uid,
+            conversation_id=conversation.id,
+            interaction_state=interaction_state,
+            recent_segments=conversation.transcript_segments[-8:],
+            photo_description=initial_photo.description or "",
+        )
+        interaction_state["assistant_response_sent"] = True
+        interaction_state["assistant_message_id"] = assistant_message.id
+        if trigger_message:
+            interaction_state["trigger_message_saved"] = True
+        _send_message_event(
+            AssistantResponseEvent(
+                interaction_id=interaction_state["interaction_id"],
+                text=assistant_message.text,
+                message_id=assistant_message.id,
+                trigger_text=interaction_state.get("trigger_text"),
+                trigger_message_id=trigger_message.id if trigger_message else None,
+                conversation_id=conversation.id,
+            )
+        )
 
     # Heart beat
     started_at = time.time()
@@ -646,6 +742,9 @@ async def _stream_handler(
             else:
                 logger.info(f'Clean up the conversation {conversation_id}, reason: no content {uid} {session_id}')
                 conversations_db.delete_conversation(uid, conversation_id)
+        activation_interactions.pop(conversation_id, None)
+        activation_interaction_ids.pop(conversation_id, None)
+        activation_photo_requested_conversations.discard(conversation_id)
 
     # Process existing conversations
     async def _prepare_in_progess_conversations():
@@ -753,6 +852,15 @@ async def _stream_handler(
 
             activation_photo_requested_conversations.add(current_conversation_id)
             trigger_text = segment.text[:200] if segment.text else None
+            activation_interactions[current_conversation_id] = {
+                "interaction_id": interaction_id,
+                "trigger_text": trigger_text,
+                "trigger_message_id": str(uuid.uuid4()),
+                "initial_photo_id": None,
+                "assistant_message_id": None,
+                "assistant_response_sent": False,
+                "activated_at": datetime.now(timezone.utc).isoformat(),
+            }
             logger.info(
                 "Activation phrase detected, requesting photo capture uid=%s session=%s conversation=%s interaction=%s",
                 uid,
@@ -1672,6 +1780,21 @@ async def _stream_handler(
             if not result or not result[0]:
                 continue
             conversation, updated_segments, removed_ids = result
+
+            activation_state = activation_interactions.get(conversation.id)
+            if activation_state and photos_to_process and not activation_state.get("initial_photo_id"):
+                initial_photo = next(
+                    (photo for photo in photos_to_process if not photo.discarded), photos_to_process[0]
+                )
+                activation_state["initial_photo_id"] = initial_photo.id
+                _send_message_event(
+                    InitialPhotoReadyEvent(
+                        interaction_id=activation_state["interaction_id"],
+                        photo_id=initial_photo.id,
+                    )
+                )
+                if not activation_state.get("assistant_response_sent"):
+                    spawn(_dispatch_activation_assistant_response(conversation, activation_state, initial_photo))
 
             if removed_ids:
                 _send_message_event(SegmentsDeletedEvent(segment_ids=removed_ids))
