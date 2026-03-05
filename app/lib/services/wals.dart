@@ -6,7 +6,7 @@
 /// - wal_interfaces.dart: Abstract interfaces for sync services
 /// - local_wal_sync.dart: Phone storage sync implementation
 /// - sdcard_wal_sync.dart: SD card sync implementation
-/// - flash_page_wal_sync.dart: Limitless flash page sync implementation
+/// - flash_page_wal_sync.dart: no-op placeholder (legacy Limitless sync disabled)
 /// - wal_syncs.dart: Orchestrator for all sync types
 /// - wal_service.dart: Main service class
 

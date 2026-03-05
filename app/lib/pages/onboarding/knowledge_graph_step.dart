@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import 'package:omi/pages/memories/widgets/memory_graph_page.dart';
 import 'package:omi/utils/l10n_extensions.dart';
 
 class OnboardingKnowledgeGraphStep extends StatelessWidget {
@@ -46,14 +45,15 @@ class OnboardingKnowledgeGraphStep extends StatelessWidget {
               Expanded(
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(24),
-                  child: const MemoryGraphPage(
-                    embedded: true,
-                    trackOpenEvent: false,
-                    showAppBar: false,
-                    showShareButton: false,
-                    autoRebuildIfEmpty: true,
-                    hideRebuildButtonWhenEmpty: true,
-                    initialZoom: 0.72,
+                  child: Container(
+                    color: const Color(0xFF111216),
+                    child: const Center(
+                      child: Icon(
+                        Icons.auto_awesome,
+                        color: Colors.white54,
+                        size: 72,
+                      ),
+                    ),
                   ),
                 ),
               ),

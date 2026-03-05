@@ -155,7 +155,8 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> with Ti
   void initState() {
     super.initState();
 
-    _controller = TabController(length: 3, vsync: this, initialIndex: widget.initialTabIndex);
+    final initialTabIndex = widget.initialTabIndex > 1 ? 1 : widget.initialTabIndex;
+    _controller = TabController(length: 2, vsync: this, initialIndex: initialTabIndex);
     _controller!.addListener(() {
       setState(() {
         String? tabName;
@@ -167,10 +168,6 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> with Ti
           case 1:
             selectedTab = ConversationTab.summary;
             tabName = 'Summary';
-            break;
-          case 2:
-            selectedTab = ConversationTab.actionItems;
-            tabName = 'Action Items';
             break;
           default:
             Logger.debug('Invalid tab index: ${_controller!.index}');
@@ -262,8 +259,6 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> with Ti
         return context.l10n.transcriptTab;
       case ConversationTab.summary:
         return context.l10n.conversationTab;
-      case ConversationTab.actionItems:
-        return context.l10n.actionItemsTab;
     }
   }
 
@@ -910,9 +905,6 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> with Ti
                 // Horizontal swipe to navigate between conversations (mobile only)
                 onHorizontalDragEnd: PlatformService.isMobile
                     ? (details) {
-                        // Skip if on Action Items tab (to not interfere with Dismissible swipe-to-delete)
-                        if (selectedTab == ConversationTab.actionItems) return;
-
                         final velocity = details.primaryVelocity ?? 0;
                         const swipeThreshold = 300.0; // minimum velocity to trigger navigation
 
@@ -975,7 +967,6 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> with Ti
                                   }
                                 },
                               ),
-                              ActionItemsTab(),
                             ],
                           );
                         }),
@@ -993,8 +984,6 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> with Ti
                 child: Consumer<ConversationDetailProvider>(
                   builder: (context, provider, child) {
                     final conversation = provider.conversation;
-                    final hasActionItems =
-                        conversation.structured.actionItems.where((item) => !item.deleted).isNotEmpty;
                     return ConversationBottomBar(
                       mode: ConversationBottomBarMode.detail,
                       selectedTab: selectedTab,
@@ -1002,7 +991,6 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> with Ti
                       hasSegments: conversation.transcriptSegments.isNotEmpty ||
                           conversation.photos.isNotEmpty ||
                           conversation.externalIntegration != null,
-                      hasActionItems: hasActionItems,
                       onSeekFunctionReady: (seekFunction) {
                         WidgetsBinding.instance.addPostFrameCallback((_) {
                           if (mounted) {
@@ -1020,9 +1008,6 @@ class _ConversationDetailPageState extends State<ConversationDetailPage> with Ti
                             break;
                           case ConversationTab.summary:
                             index = 1;
-                            break;
-                          case ConversationTab.actionItems:
-                            index = 2;
                             break;
                         }
                         _controller!.animateTo(index);
@@ -1516,407 +1501,5 @@ class _TranscriptWidgetsState extends State<TranscriptWidgets> with AutomaticKee
             },
           ),
         ));
-  }
-}
-
-class ActionItemDetailWidget extends StatefulWidget {
-  final ActionItem actionItem;
-  final String conversationId;
-
-  const ActionItemDetailWidget({
-    super.key,
-    required this.actionItem,
-    required this.conversationId,
-  });
-
-  @override
-  State<ActionItemDetailWidget> createState() => _ActionItemDetailWidgetState();
-}
-
-class _ActionItemDetailWidgetState extends State<ActionItemDetailWidget> {
-  static final Map<String, bool> _pendingStates = {}; // Track pending states by description
-  final AppReviewService _appReviewService = AppReviewService();
-
-  @override
-  void dispose() {
-    // Clean up any pending state for this item when widget is disposed
-    _pendingStates.remove(widget.actionItem.description);
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<ConversationDetailProvider>(
-      builder: (context, provider, child) {
-        // Find the current action item by description to get the latest state
-        final actionItem = provider.conversation.structured.actionItems
-            .firstWhere((item) => item.description == widget.actionItem.description, orElse: () => widget.actionItem);
-
-        // Check if this specific item has a pending state change
-        final isCompleted = _pendingStates.containsKey(widget.actionItem.description)
-            ? _pendingStates[widget.actionItem.description]!
-            : actionItem.completed;
-
-        return AnimatedOpacity(
-          opacity: 1.0,
-          duration: const Duration(milliseconds: 300),
-          child: Container(
-            decoration: BoxDecoration(
-              color: Colors.grey[900],
-              borderRadius: BorderRadius.circular(16),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withValues(alpha: 0.1),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Material(
-              color: Colors.transparent,
-              child: InkWell(
-                onTap: () {
-                  HapticFeedback.lightImpact();
-                  // TODO: Add edit functionality if needed
-                },
-                borderRadius: BorderRadius.circular(16),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(vertical: 16.0, horizontal: 16.0),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      SizedBox(
-                        width: 20,
-                        height: 20,
-                        child: Transform.translate(
-                          offset: const Offset(0, 2),
-                          child: GestureDetector(
-                            onTap: () => _toggleCompletion(provider, actionItem),
-                            child: Container(
-                              width: 20,
-                              height: 20,
-                              decoration: BoxDecoration(
-                                color: isCompleted ? Colors.green : Colors.transparent,
-                                border: Border.all(
-                                  color: isCompleted ? Colors.green : Colors.grey,
-                                  width: 2,
-                                ),
-                                borderRadius: BorderRadius.circular(4),
-                              ),
-                              child: isCompleted
-                                  ? const Icon(
-                                      Icons.check,
-                                      size: 14,
-                                      color: Colors.white,
-                                    )
-                                  : null,
-                            ),
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 16),
-                      Expanded(
-                        child: Text(
-                          actionItem.description,
-                          style: TextStyle(
-                            color: isCompleted ? Colors.grey : Colors.white,
-                            decoration: isCompleted ? TextDecoration.lineThrough : null,
-                            decorationColor: Colors.grey,
-                            fontSize: 15,
-                            height: 1.4,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-
-  void _toggleCompletion(ConversationDetailProvider provider, ActionItem actionItem) async {
-    // Haptic feedback
-    HapticFeedback.lightImpact();
-
-    final newValue = !actionItem.completed;
-    final itemDescription = widget.actionItem.description;
-
-    // Update pending state immediately for instant visual feedback
-    setState(() {
-      _pendingStates[itemDescription] = newValue;
-    });
-
-    // Get ConversationProvider for global state management
-    final conversationProvider = Provider.of<ConversationProvider>(context, listen: false);
-
-    try {
-      // Update global state immediately
-      await conversationProvider.updateGlobalActionItemState(provider.conversation, itemDescription, newValue);
-
-      // Wait for 200ms before clearing pending state (allows user to see the change before item moves)
-      Future.delayed(const Duration(milliseconds: 200), () {
-        if (mounted) {
-          setState(() {
-            _pendingStates.remove(itemDescription); // Clear pending state so item moves to correct section
-          });
-        }
-      });
-
-      // Track analytics - find the current index for analytics
-      final currentIndex =
-          provider.conversation.structured.actionItems.indexWhere((item) => item.description == itemDescription);
-      if (currentIndex != -1) {
-        if (newValue) {
-          MixpanelManager().checkedActionItem(provider.conversation, currentIndex);
-
-          if (!await _appReviewService.hasCompletedFirstActionItem()) {
-            await _appReviewService.markFirstActionItemCompleted();
-            _appReviewService.showReviewPromptIfNeeded(context, isProcessingFirstConversation: false);
-          }
-        } else {
-          MixpanelManager().uncheckedActionItem(provider.conversation, currentIndex);
-        }
-      }
-    } catch (e) {
-      // If there's an error, revert pending state
-      if (mounted) {
-        setState(() {
-          _pendingStates.remove(itemDescription);
-        });
-      }
-      Logger.debug('Error updating action item state: $e');
-    }
-  }
-}
-
-class ActionItemsTab extends StatelessWidget {
-  const ActionItemsTab({super.key});
-
-  @override
-  Widget build(BuildContext context) {
-    return Consumer<ConversationDetailProvider>(builder: (context, provider, child) {
-      final allActionItems = provider.conversation.structured.actionItems.where((item) => !item.deleted).toList();
-      final incompleteItems = allActionItems.where((item) => !item.completed).toList();
-      final completedItems = allActionItems.where((item) => item.completed).toList();
-
-      if (allActionItems.isEmpty) {
-        return _buildEmptyState(context);
-      }
-
-      return CustomScrollView(
-        physics: const AlwaysScrollableScrollPhysics(),
-        slivers: [
-          // Header section with title and count
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8.0, 24.0, 8.0, 0.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    children: [
-                      const Text(
-                        'To-Do',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: Colors.grey[800],
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          '${incompleteItems.length}',
-                          style: const TextStyle(
-                            color: Colors.grey,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            ),
-          ),
-
-          // Incomplete action items
-          if (incompleteItems.isNotEmpty)
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final item = incompleteItems[index];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    child: ActionItemDetailWidget(
-                      actionItem: item,
-                      conversationId: provider.conversation.id,
-                    ),
-                  );
-                },
-                childCount: incompleteItems.length,
-              ),
-            )
-          else
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: Container(
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[900],
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Center(
-                    child: Text(
-                      'No pending action items',
-                      style: TextStyle(
-                        color: Colors.grey.shade400,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-          // Completed section header
-          SliverToBoxAdapter(
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(8.0, 24.0, 8.0, 8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      Row(
-                        children: [
-                          const Text(
-                            'Completed',
-                            style: TextStyle(
-                              color: Colors.white,
-                              fontSize: 20,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: Colors.grey[800],
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Text(
-                              '${completedItems.length}',
-                              style: const TextStyle(
-                                color: Colors.grey,
-                                fontSize: 14,
-                                fontWeight: FontWeight.w500,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ),
-
-          // Completed action items
-          if (completedItems.isNotEmpty)
-            SliverList(
-              delegate: SliverChildBuilderDelegate(
-                (context, index) {
-                  final item = completedItems[index];
-                  return Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-                    child: ActionItemDetailWidget(
-                      actionItem: item,
-                      conversationId: provider.conversation.id,
-                    ),
-                  );
-                },
-                childCount: completedItems.length,
-              ),
-            )
-          else
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                child: Container(
-                  height: 52,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[900],
-                    borderRadius: BorderRadius.circular(16),
-                  ),
-                  child: Center(
-                    child: Text(
-                      'No completed items yet',
-                      style: TextStyle(
-                        color: Colors.grey.shade400,
-                        fontSize: 14,
-                      ),
-                    ),
-                  ),
-                ),
-              ),
-            ),
-
-          const SliverPadding(padding: EdgeInsets.only(bottom: 150)),
-        ],
-      );
-    });
-  }
-
-  Widget _buildEmptyState(BuildContext context) {
-    return Center(
-      child: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Icon(
-              Icons.check_circle_outline,
-              size: 72,
-              color: Colors.grey.shade400,
-            ),
-            const SizedBox(height: 24),
-            Text(
-              'No Action Items',
-              style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    color: Colors.white,
-                    fontWeight: FontWeight.bold,
-                  ),
-              textAlign: TextAlign.center,
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'Tasks and to-dos from this conversation will appear here once they are created.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey.shade400,
-                fontSize: 16,
-                height: 1.5,
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
   }
 }

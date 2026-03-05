@@ -41,15 +41,6 @@ class _ConnectedDeviceState extends State<ConnectedDevice> {
     return await connection.disconnect();
   }
 
-  Future _bleUnpairDevice(BtDevice btDevice) async {
-    var connection = await ServiceManager.instance().device.ensureConnection(btDevice.id);
-    if (connection == null) {
-      return Future.value(null);
-    }
-    await connection.unpair();
-    return await connection.disconnect();
-  }
-
   @override
   void initState() {
     super.initState();
@@ -398,69 +389,6 @@ class _ConnectedDeviceState extends State<ConnectedDevice> {
               ),
             ),
           ),
-          // Unpair Device - only for Limitless devices
-          if (provider.connectedDevice?.type == DeviceType.limitless) ...[
-            const Divider(height: 1, color: Color(0xFF3C3C43)),
-            GestureDetector(
-              onTap: () async {
-                showDialog(
-                  context: context,
-                  builder: (c) => getDialog(
-                    context,
-                    () => Navigator.of(context).pop(),
-                    () async {
-                      Navigator.of(context).pop();
-                      await SharedPreferencesUtil()
-                          .btDeviceSet(BtDevice(id: '', name: '', type: DeviceType.omi, rssi: 0));
-                      SharedPreferencesUtil().deviceName = '';
-                      if (provider.connectedDevice != null) {
-                        await _bleUnpairDevice(provider.connectedDevice!);
-                      }
-                      if (context.mounted) {
-                        context.read<DeviceProvider>().setIsConnected(false);
-                        context.read<DeviceProvider>().setConnectedDevice(null);
-                        context.read<DeviceProvider>().updateConnectingStatus(false);
-                        Navigator.of(context).pop();
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(context.l10n.deviceUnpairedMessage),
-                            duration: const Duration(seconds: 5),
-                          ),
-                        );
-                      }
-                    },
-                    context.l10n.unpairDeviceDialogTitle,
-                    context.l10n.unpairDeviceDialogMessage,
-                    okButtonText: context.l10n.unpair,
-                  ),
-                );
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 18),
-                child: Row(
-                  children: [
-                    const SizedBox(
-                      width: 24,
-                      height: 24,
-                      child: Padding(
-                        padding: EdgeInsets.only(left: 2, top: 1),
-                        child: FaIcon(FontAwesomeIcons.ban, color: Colors.orange, size: 20),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    Text(
-                      context.l10n.unpairAndForgetDevice,
-                      style: const TextStyle(
-                        color: Colors.orange,
-                        fontSize: 17,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
         ],
       ),
     );

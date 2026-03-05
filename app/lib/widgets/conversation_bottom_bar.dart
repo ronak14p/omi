@@ -22,7 +22,7 @@ enum ConversationBottomBarMode {
   detail // For viewing completed conversations
 }
 
-enum ConversationTab { transcript, summary, actionItems }
+enum ConversationTab { transcript, summary }
 
 class ConversationBottomBar extends StatefulWidget {
   final ConversationBottomBarMode mode;
@@ -30,7 +30,6 @@ class ConversationBottomBar extends StatefulWidget {
   final Function(ConversationTab) onTabSelected;
   final VoidCallback onStopPressed;
   final bool hasSegments;
-  final bool hasActionItems;
   final ServerConversation? conversation;
   final Function(Future<void> Function(double))? onSeekFunctionReady;
 
@@ -41,7 +40,6 @@ class ConversationBottomBar extends StatefulWidget {
     required this.onTabSelected,
     required this.onStopPressed,
     this.hasSegments = true,
-    this.hasActionItems = true,
     this.conversation,
     this.onSeekFunctionReady,
   });
@@ -426,14 +424,6 @@ class _ConversationBottomBarState extends State<ConversationBottomBar> {
           ),
         ),
 
-        if (widget.hasActionItems) ...[
-          const SizedBox(width: 8),
-          _buildCircularButton(
-            icon: FontAwesomeIcons.listCheck,
-            isSelected: widget.selectedTab == ConversationTab.actionItems,
-            onTap: () => widget.onTabSelected(ConversationTab.actionItems),
-          ),
-        ],
       ],
     );
   }

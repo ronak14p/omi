@@ -244,24 +244,10 @@ class CaptureProvider extends ChangeNotifier
       return null;
     }
     switch (_recordingDevice!.type) {
-      case DeviceType.friendPendant:
-        return 'friend_com';
       case DeviceType.omi:
         return 'omi';
       case DeviceType.openglass:
         return 'openglass';
-      case DeviceType.fieldy:
-        return 'fieldy';
-      case DeviceType.bee:
-        return 'bee';
-      case DeviceType.plaud:
-        return 'plaud';
-      case DeviceType.frame:
-        return 'frame';
-      case DeviceType.appleWatch:
-        return 'apple_watch';
-      case DeviceType.limitless:
-        return 'limitless';
     }
   }
 

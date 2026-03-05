@@ -259,6 +259,54 @@ Applied in code (this branch):
   - Removed conversation action-item mutation endpoints from `routers/conversations.py`.
   - Removed memory/action-item tools from `utils/retrieval/agentic.py` core tool list and tool display routing.
 
+## 9) Hard-Delete Pass Applied (2026-03-04)
+
+Applied as physical file removals plus code-path cleanup:
+
+- Non-glasses device implementation files removed:
+  - `app/lib/services/devices/apple_watch_connection.dart`
+  - `app/lib/services/devices/bee_connection.dart`
+  - `app/lib/services/devices/custom_connection.dart`
+  - `app/lib/services/devices/fieldy_connection.dart`
+  - `app/lib/services/devices/frame_connection.dart`
+  - `app/lib/services/devices/friend_pendant_connection.dart`
+  - `app/lib/services/devices/limitless_connection.dart`
+  - `app/lib/services/devices/plaud_connection.dart`
+  - `app/lib/services/devices/discovery/apple_watch_discoverer.dart`
+  - `app/lib/services/devices/transports/frame_transport.dart`
+  - `app/lib/services/devices/transports/watch_transport.dart`
+  - `app/lib/services/bridges/apple_watch_bridge.dart`
+  - `app/lib/widgets/apple_watch_setup_bottom_sheet.dart`
+  - `app/lib/pages/onboarding/apple_watch_permission_page.dart`
+
+- Device type model collapsed to glasses-only:
+  - `DeviceType` reduced to `omi` and `openglass` in `app/lib/backend/schema/bt_device/bt_device.dart`.
+  - `BtDevice` info/loading/detection logic reduced to Omi/OmiGlass path.
+  - `app/lib/utils/device.dart` image mapping reduced to glasses-only logic.
+  - Capture device-source mapping reduced to glasses-only in `app/lib/providers/capture_provider.dart`.
+
+- Legacy Limitless-specific sync path disabled:
+  - `app/lib/services/wals/flash_page_wal_sync.dart` replaced with no-op implementation.
+  - `app/lib/pages/capture/widgets/limitless_sync_widget.dart` removed.
+  - Limitless-only unpair UI blocks removed from:
+    - `app/lib/pages/home/device.dart`
+    - `app/lib/pages/settings/device_settings.dart`
+
+- Memories/action-items module files hard-deleted:
+  - Entire `app/lib/pages/action_items/` tree removed.
+  - Entire `app/lib/pages/memories/` tree removed.
+  - `app/lib/providers/action_items_provider.dart` removed.
+  - `app/lib/providers/memories_provider.dart` removed.
+  - `app/lib/services/notifications/action_item_notification_handler.dart` removed.
+  - Unused conversations widgets removed:
+    - `app/lib/pages/conversations/widgets/daily_score_widget.dart`
+    - `app/lib/pages/conversations/widgets/score_widget.dart`
+    - `app/lib/pages/conversations/widgets/today_tasks_widget.dart`
+  - `app/lib/backend/http/api/memories.dart` removed.
+
+- Onboarding dependency cleanup:
+  - `app/lib/pages/onboarding/knowledge_graph_step.dart` no longer depends on memory graph page.
+
 Notes:
 
 - Full hard deletion of all legacy non-glasses files is intentionally deferred to a second pass after runtime validation, to reduce regression risk.
