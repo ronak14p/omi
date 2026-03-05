@@ -28,7 +28,6 @@ from database.redis_db import (
     disable_user_webhook_db,
     enable_user_webhook_db,
     user_webhook_status_db,
-    set_user_preferred_app,
     set_user_data_protection_level,
     get_generic_cache,
     set_generic_cache,
@@ -46,7 +45,6 @@ from models.user_usage import UserUsageResponse, UsagePeriod
 from datetime import datetime, time, timedelta
 
 from models.users import WebhookType, UserSubscriptionResponse, SubscriptionPlan, PlanType, PricingOption
-from utils.apps import get_available_app_by_id
 from utils.subscription import (
     get_plan_limits,
     get_plan_features,
@@ -631,28 +629,6 @@ def finalize_migration_request(request: MigrationTargetRequest, uid: str = Depen
     finalize_migration(uid, request.target_level)
     set_user_data_protection_level(uid, request.target_level)
     return {'status': 'ok'}
-
-
-@router.put('/v1/users/preferences/app', tags=['v1'])
-def set_preferred_app_for_user(
-    app_id: str = Query(..., description="The ID of the app to set as preferred"),
-    uid: str = Depends(auth.get_current_user_uid),
-):
-    """Sets the user's preferred app for future processing."""
-
-    app_id_to_set = app_id
-
-    selected_app = get_available_app_by_id(app_id_to_set, uid)
-    if not selected_app:
-        raise HTTPException(status_code=410, detail=f"App with ID '{app_id_to_set}' not found or not accessible.")
-
-    try:
-        set_user_preferred_app(uid, app_id_to_set)
-    except Exception as e:
-        logger.error(f"Failed to set preferred app in Redis for user {uid}: {e}")
-        raise HTTPException(status_code=500, detail="Failed to store app preference.")
-
-    return {"status": "ok", "message": f"App {app_id_to_set} set as preferred app for user {uid}."}
 
 
 # **************************************

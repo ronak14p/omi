@@ -8,11 +8,9 @@ from typing import AsyncGenerator, List, Optional, Tuple
 import database.chat as chat_db
 import database.notifications as notification_db
 import database.users as user_db
-from database.apps import record_app_usage
 from models.chat import ChatSession, Message, ResponseMessage, MessageConversation
 from models.conversation import Conversation
 from models.notification_message import NotificationMessage
-from models.app import UsageHistoryType
 from models.transcript_segment import TranscriptSegment
 from utils.notifications import send_notification
 from utils.other.storage import get_syncing_file_temporal_signed_url, delete_syncing_temporal_file
@@ -135,7 +133,6 @@ def process_voice_message_segment(
 
     # not support plugin
     app = None
-    app_id = None
 
     messages = list(reversed([Message(**msg) for msg in chat_db.get_messages(uid, limit=10)]))
     with track_usage(uid, Features.CHAT):
@@ -155,14 +152,12 @@ def process_voice_message_segment(
         text=response,
         created_at=datetime.now(timezone.utc),
         sender='ai',
-        app_id=app_id,
+        app_id=None,
         type='text',
         memories_id=memories_id,
     )
     chat_db.add_message(uid, ai_message.dict())
     ai_message.memories = memories if len(memories) < 5 else memories[:5]
-    if app_id:
-        record_app_usage(uid, app_id, UsageHistoryType.chat_message_sent, message_id=ai_message.id)
 
     ai_message_resp = ai_message.dict()
 
@@ -226,7 +221,6 @@ async def process_voice_message_segment_stream(
 
     # not support plugin
     app = None
-    app_id = None
 
     def process_message(response: str, callback_data: dict):
         memories = callback_data.get('memories_found', [])
@@ -249,7 +243,7 @@ async def process_voice_message_segment_stream(
             text=response,
             created_at=datetime.now(timezone.utc),
             sender='ai',
-            app_id=app_id,
+            app_id=None,
             type='text',
             memories_id=memories_id,
             langsmith_run_id=langsmith_run_id,  # Store run_id for feedback tracking
@@ -266,9 +260,6 @@ async def process_voice_message_segment_stream(
 
         chat_db.add_message(uid, ai_message.dict())
         ai_message.memories = [MessageConversation(**m) for m in (memories if len(memories) < 5 else memories[:5])]
-
-        if app_id:
-            record_app_usage(uid, app_id, UsageHistoryType.chat_message_sent, message_id=ai_message.id)
 
         return ai_message, ask_for_nps
 

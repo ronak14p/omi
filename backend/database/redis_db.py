@@ -553,19 +553,6 @@ def get_daily_notification_count(uid: str) -> int:
     return int(val)
 
 
-def set_user_preferred_app(uid: str, app_id: str):
-    """Stores the user's preferred app ID."""
-    key = f'user:{uid}:preferred_app'
-    r.set(key, app_id)
-
-
-def get_user_preferred_app(uid: str) -> Optional[str]:
-    """Retrieves the user's preferred app ID, if set."""
-    key = f'user:{uid}:preferred_app'
-    app_id = r.get(key)
-    return app_id.decode() if app_id else None
-
-
 @try_catch_decorator
 def set_user_data_protection_level(uid: str, level: str):
     """Caches the user's data protection level."""

@@ -25,7 +25,6 @@ from database import redis_db
 from database.users import get_agent_vm
 from utils.other.endpoints import get_current_user_uid
 from utils.retrieval.agentic import agent_config_context, CORE_TOOLS
-from utils.retrieval.tools.app_tools import load_app_tools
 from utils.log_sanitizer import sanitize
 
 logger = logging.getLogger(__name__)
@@ -418,17 +417,7 @@ def _tool_schema(t) -> dict:
 @router.get("/v1/agent/tools")
 def list_tools(uid: str = Depends(get_current_user_uid)):
     """Return all available tool definitions for a user."""
-    tools = []
-
-    for t in CORE_TOOLS:
-        tools.append(_tool_schema(t))
-
-    try:
-        app_tools = load_app_tools(uid)
-        for t in app_tools:
-            tools.append(_tool_schema(t))
-    except Exception as e:
-        logger.error(f"⚠️ Error loading app tools for agent_tools: {e}")
+    tools = [_tool_schema(t) for t in CORE_TOOLS]
 
     return {"tools": tools}
 
@@ -455,11 +444,6 @@ async def execute_tool(
 
     # Find the tool
     all_tools = list(CORE_TOOLS)
-    try:
-        app_tools = load_app_tools(uid)
-        all_tools.extend(app_tools)
-    except Exception as e:
-        logger.error(f"⚠️ Error loading app tools: {e}")
 
     target = None
     for t in all_tools:

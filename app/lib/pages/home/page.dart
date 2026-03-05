@@ -15,12 +15,8 @@ import 'package:omi/backend/http/api/agents.dart';
 import 'package:omi/backend/http/api/conversations.dart';
 import 'package:omi/backend/http/api/users.dart';
 import 'package:omi/backend/preferences.dart';
-import 'package:omi/backend/schema/app.dart';
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
 import 'package:omi/backend/schema/geolocation.dart';
-import 'package:omi/main.dart';
-import 'package:omi/pages/apps/app_detail/app_detail.dart';
-import 'package:omi/pages/apps/page.dart';
 import 'package:omi/pages/chat/page.dart';
 import 'package:omi/pages/conversation_capturing/page.dart';
 import 'package:omi/pages/conversation_detail/page.dart';
@@ -28,10 +24,8 @@ import 'package:omi/pages/conversations/conversations_page.dart';
 import 'package:omi/pages/conversations/sync_page.dart';
 import 'package:omi/pages/conversations/widgets/merge_action_bar.dart';
 import 'package:omi/pages/settings/daily_summary_detail_page.dart';
-import 'package:omi/pages/settings/data_privacy_page.dart';
 import 'package:omi/pages/settings/settings_drawer.dart';
 import 'package:omi/pages/settings/wrapped_2025_page.dart';
-import 'package:omi/providers/app_provider.dart';
 import 'package:omi/providers/capture_provider.dart';
 import 'package:omi/providers/connectivity_provider.dart';
 import 'package:omi/providers/conversation_provider.dart';
@@ -115,7 +109,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
   StreamSubscription? _notificationStreamSubscription;
 
   final GlobalKey<State<ConversationsPage>> _conversationsPageKey = GlobalKey<State<ConversationsPage>>();
-  final GlobalKey<AppsPageState> _appsPageKey = GlobalKey<AppsPageState>();
   late final List<Widget> _pages;
 
   // Freemium switch handler for auto-switch dialogs
@@ -123,23 +116,12 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
 
   CaptureProvider? _captureProvider;
 
-  void _initiateApps() {
-    context.read<AppProvider>().getApps();
-    context.read<AppProvider>().getPopularApps();
-  }
-
   void _scrollToTop(int pageIndex) {
     switch (pageIndex) {
       case 0:
         final conversationsState = _conversationsPageKey.currentState;
         if (conversationsState != null) {
           (conversationsState as dynamic).scrollToTop();
-        }
-        break;
-      case 3:
-        final appsState = _appsPageKey.currentState;
-        if (appsState != null) {
-          appsState.scrollToTop();
         }
         break;
     }
@@ -200,9 +182,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
   void initState() {
     _pages = [
       ConversationsPage(key: _conversationsPageKey),
-      const SizedBox.shrink(),
-      const SizedBox.shrink(),
-      AppsPage(key: _appsPageKey),
     ];
     SharedPreferencesUtil().onboardingCompleted = true;
     updateUserOnboardingState(completed: true);
@@ -225,9 +204,8 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
       }
 
       switch (pageAlias) {
-        case "apps":
-          homePageIdx = 3;
-          break;
+        default:
+          homePageIdx = 0;
       }
     }
 
@@ -247,8 +225,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
     }
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
-      _initiateApps();
-
       // ForegroundUtil.requestPermissions();
       if (!PlatformService.isDesktop) {
         await ForegroundUtil.initializeForegroundService();
@@ -265,41 +241,10 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
       // Navigate
       if (!mounted) return;
       switch (pageAlias) {
-        case "apps":
-          if (detailPageId != null && detailPageId.isNotEmpty) {
-            final appProvider = context.read<AppProvider>();
-            var app = await appProvider.getAppFromId(detailPageId);
-            if (app != null && mounted) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => AppDetailPage(app: app),
-                ),
-              );
-            }
-          }
-          break;
         case "chat":
           Logger.debug('inside chat alias $detailPageId');
-          if (detailPageId != null && detailPageId.isNotEmpty) {
-            var appId = detailPageId != "omi" ? detailPageId : ''; // omi ~ no select
-            if (mounted) {
-              var appProvider = Provider.of<AppProvider>(context, listen: false);
-              var messageProvider = Provider.of<MessageProvider>(context, listen: false);
-              App? selectedApp;
-              if (appId.isNotEmpty) {
-                selectedApp = await appProvider.getAppFromId(appId);
-              }
-              appProvider.setSelectedChatAppId(appId);
-              await messageProvider.refreshMessages();
-              if (messageProvider.messages.isEmpty) {
-                messageProvider.sendInitialAppMessage(selectedApp);
-              }
-            }
-          } else {
-            if (mounted) {
-              await Provider.of<MessageProvider>(context, listen: false).refreshMessages();
-            }
+          if (mounted) {
+            await Provider.of<MessageProvider>(context, listen: false).refreshMessages();
           }
           // Navigate to chat page directly since it's no longer in the tab bar
           // If there's an auto-message (e.g., from daily reflection notification), send it
@@ -325,13 +270,6 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
               SettingsDrawer.show(context);
             }
           });
-          if (detailPageId == 'data-privacy') {
-            MyApp.navigatorKey.currentState?.push(
-              MaterialPageRoute(
-                builder: (context) => const DataPrivacyPage(),
-              ),
-            );
-          }
           break;
         case "conversation":
           // Handle conversation deep link: /conversation/{id}?share=1
@@ -465,11 +403,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
   void _listenToMessagesFromNotification() {
     _notificationStreamSubscription = NotificationService.instance.listenForServerMessages.listen((message) {
       if (mounted) {
-        var selectedApp = Provider.of<AppProvider>(context, listen: false).getSelectedApp();
-        if (selectedApp == null || message.appId == selectedApp.id) {
-          Provider.of<MessageProvider>(context, listen: false).addMessage(message);
-        }
-        // chatPageKey.currentState?.scrollToBottom();
+        Provider.of<MessageProvider>(context, listen: false).addMessage(message);
       }
     });
   }
@@ -568,13 +502,14 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
         },
         child: Consumer<HomeProvider>(
           builder: (context, homeProvider, _) {
+            final safeSelectedIndex = homeProvider.selectedIndex.clamp(0, _pages.length - 1);
             return Scaffold(
               backgroundColor: Theme.of(context).colorScheme.primary,
               resizeToAvoidBottomInset: false,
-              appBar: homeProvider.selectedIndex == 5 ? null : _buildAppBar(context),
+              appBar: _buildAppBar(context),
               body: DefaultTabController(
-                length: 4,
-                initialIndex: homeProvider.selectedIndex,
+                length: 1,
+                initialIndex: safeSelectedIndex,
                 child: GestureDetector(
                   onTap: () {
                     primaryFocus?.unfocus();
@@ -587,7 +522,7 @@ class _HomePageState extends State<HomePage> with WidgetsBindingObserver, Ticker
                         children: [
                           Expanded(
                             child: IndexedStack(
-                              index: context.watch<HomeProvider>().selectedIndex,
+                              index: safeSelectedIndex,
                               children: _pages,
                             ),
                           ),

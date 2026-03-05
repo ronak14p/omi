@@ -1,19 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:collection/collection.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:provider/provider.dart';
 
 import 'package:omi/backend/http/api/audio.dart';
-import 'package:omi/backend/schema/app.dart';
 import 'package:omi/backend/schema/conversation.dart';
 import 'package:omi/gen/assets.gen.dart';
 import 'package:omi/pages/conversation_detail/conversation_detail_provider.dart';
-import 'package:omi/pages/conversation_detail/widgets/summarized_apps_sheet.dart';
 import 'package:omi/utils/analytics/mixpanel.dart';
 import 'package:omi/utils/logger.dart';
 
@@ -502,57 +498,28 @@ class _ConversationBottomBarState extends State<ConversationBottomBar> {
   Widget _buildSummaryPillContent(BuildContext context) {
     return Consumer<ConversationDetailProvider>(
       builder: (context, provider, _) {
-        final summarizedApp = provider.getSummarizedApp();
-        final app = summarizedApp != null
-            ? provider.appsList.firstWhereOrNull((element) => element.id == summarizedApp.appId)
-            : null;
-
-        return _buildSummaryPillInner(context, provider, app);
+        return _buildSummaryPillInner(context, provider);
       },
     );
   }
 
-  Widget _buildSummaryPillInner(BuildContext context, ConversationDetailProvider provider, App? app) {
+  Widget _buildSummaryPillInner(BuildContext context, ConversationDetailProvider provider) {
     final isReprocessing = provider.loadingReprocessConversation;
-    final reprocessingApp = provider.selectedAppForReprocessing;
 
     void handleTap() {
       HapticFeedback.mediumImpact();
-      if (widget.selectedTab == ConversationTab.summary) {
-        showModalBottomSheet(
-          context: context,
-          isScrollControlled: true,
-          backgroundColor: Colors.transparent,
-          builder: (context) => const SummarizedAppsBottomSheet(),
-        );
-      } else {
+      if (widget.selectedTab != ConversationTab.summary) {
         widget.onTabSelected(ConversationTab.summary);
       }
     }
 
     String displayName = 'Summary';
-    if (isReprocessing && reprocessingApp != null) {
-      displayName = reprocessingApp.name;
-    } else if (app != null) {
-      displayName = app.name;
-    }
 
     if (displayName.length > 8) {
       displayName = '${displayName.substring(0, 8)}...';
     }
 
-    String? appImageUrl;
-    bool isLocalAsset = false;
-    if (isReprocessing) {
-      if (reprocessingApp != null) {
-        appImageUrl = reprocessingApp.getImageUrl();
-      } else {
-        appImageUrl = Assets.images.herologo.path;
-        isLocalAsset = true;
-      }
-    } else if (app != null) {
-      appImageUrl = app.getImageUrl();
-    }
+    final appImageUrl = Assets.images.herologo.path;
 
     return Container(
       height: 56,
@@ -580,7 +547,7 @@ class _ConversationBottomBarState extends State<ConversationBottomBar> {
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               // App icon or default icon
-              _buildAppIcon(appImageUrl, isLocalAsset, isReprocessing),
+              _buildAppIcon(appImageUrl, true, isReprocessing),
               const SizedBox(width: 6),
               // App name
               Flexible(
@@ -929,38 +896,12 @@ class _ConversationBottomBarState extends State<ConversationBottomBar> {
       );
     }
 
-    return CachedNetworkImage(
-      imageUrl: imageUrl,
-      imageBuilder: (context, imageProvider) {
-        return Container(
-          width: size,
-          height: size,
-          decoration: BoxDecoration(
-            shape: BoxShape.circle,
-            image: DecorationImage(
-              image: imageProvider,
-              fit: BoxFit.cover,
-            ),
-          ),
-        );
-      },
-      errorWidget: (context, url, error) {
-        return SizedBox(
-          width: size,
-          height: size,
-          child: SvgPicture.asset(
-            Assets.images.aiMagic,
-            colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
-          ),
-        );
-      },
-      placeholder: (context, url) => const SizedBox(
-        width: size,
-        height: size,
-        child: CircularProgressIndicator(
-          strokeWidth: 2,
-          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-        ),
+    return SizedBox(
+      width: size,
+      height: size,
+      child: SvgPicture.asset(
+        Assets.images.aiMagic,
+        colorFilter: const ColorFilter.mode(Colors.white, BlendMode.srcIn),
       ),
     );
   }

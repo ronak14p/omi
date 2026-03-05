@@ -322,4 +322,41 @@ Near-term strategy:
 2. Preserve agent confirmation APIs in `backend/routers/agent_tools.py`.
 3. After prune, replace adapter internals with OpenClaw-compatible runtime while keeping same app-facing contract.
 
+## 11) Execution Status (Completed 2026-03-05)
+
+This prune spec has now been executed in-repo.
+
+### Completed
+
+1. Frontend runtime decoupling and hard deletes completed for app platform, payment/persona/referral layers, integration/task providers, MCP/provider surfaces, and conversation app-summary UI hooks.
+2. Backend router surface was reduced in `backend/main.py` and unmounted routers were deleted.
+3. Dynamic app tool loading path is removed from runtime agent execution.
+4. Conversation processing app-selection flow was removed (no preferred/suggested app orchestration in runtime).
+5. Backend chat/notification/pusher paths were hardened to single-agent behavior and cleaned of removed app utility dependencies.
+6. Web conversation legacy cleanup completed:
+   - removed `suggested_summarization_apps` usage in web conversation types/UI
+   - removed `GenerateSummaryButton` template-generation component from conversation detail flow
+   - retained read-only rendering for existing `apps_results` content only
+
+### Verification Snapshot
+
+- `rg -n "include_router\\(apps|include_router\\(payment|include_router\\(mcp|include_router\\(integrations|include_router\\(task_integrations" backend/main.py`  
+  Result: clean.
+- `rg -n "load_app_tools|preferred app|suggested_summarization_apps|/v1/apps|/v2/apps" backend`  
+  Result: clean.
+- App runtime verification queries are clean when excluding generated localization outputs:
+  - excluded paths: `app/lib/l10n/**`, `app/lib/gen/**`
+  - reason: these files still intentionally contain historical translation keys/text labels.
+- Web verification query `suggested_summarization_apps|suggestedAppIds|GenerateSummaryButton` under `web/app/src`:
+  Result: clean.
+
+### Environment Constraints During Validation
+
+- Could not run required formatters/tests in this environment because tooling was unavailable:
+  - `black`: not installed
+  - `dart`: not installed
+  - `flutter`: not installed
+  - `pytest`: not installed
+  - `next`: not installed in this shell (`npm run lint` in `web/app` failed)
+
 This preserves momentum: prune complexity now, swap harness internals next.

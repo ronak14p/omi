@@ -48,7 +48,6 @@ from utils.retrieval.tools import (
     get_screen_activity_tool,
     search_screen_activity_tool,
 )
-from utils.retrieval.tools.app_tools import load_app_tools, get_tool_status_message
 from utils.retrieval.safety import AgentSafetyGuard, SafetyGuardError
 from utils.llm.clients import llm_agent, llm_agent_stream
 from utils.llm.chat import _get_agentic_qa_prompt
@@ -59,9 +58,8 @@ import logging
 logger = logging.getLogger(__name__)
 
 # PROMPT CACHE OPTIMIZATION: This list MUST stay fixed and in this exact order.
-# OpenAI serializes tools before the system prompt.  If the tool definitions are
+# OpenAI serializes tools before the system prompt. If the tool definitions are
 # byte-identical across requests the first ~11 000 tokens are cached (90 % off).
-# Dynamic per-user app tools are appended AFTER this list so the prefix stays stable.
 CORE_TOOLS = [
     get_conversations_tool,
     search_conversations_tool,
@@ -96,13 +94,7 @@ def get_tool_display_name(tool_name: str, tool_obj: Optional[Any] = None) -> str
     Returns:
         User-friendly display name (e.g., 'Searching Notion')
     """
-    # Check if tool has a custom status_message (for app tools)
-    # First check the global mapping
-    status_msg = get_tool_status_message(tool_name)
-    if status_msg:
-        return status_msg
-
-    # Fallback: check if tool object has status_message attribute
+    # Check if tool object has custom status_message attribute
     if tool_obj and hasattr(tool_obj, 'status_message') and tool_obj.status_message:
         return tool_obj.status_message
     tool_display_map = {
@@ -229,17 +221,8 @@ def execute_agentic_chat(
         logger.error(f"⚠️ Could not get prompt metadata: {e}")
         prompt_name, prompt_commit, prompt_source = None, None, None
 
-    # Core tools (fixed order) + dynamic app tools appended at end
+    # Core tools (fixed order)
     tools = list(CORE_TOOLS)
-
-    # Load tools from enabled apps (appended AFTER core tools to preserve cache prefix)
-    try:
-        app_tools = load_app_tools(uid)
-        tools.extend(app_tools)
-        if app_tools:
-            logger.info(f"🔧 Added {len(app_tools)} app tools to chat")
-    except Exception as e:
-        logger.error(f"⚠️ Error loading app tools: {e}")
 
     # Convert messages to LangChain format and prepend system message
     lc_messages = [SystemMessage(content=system_prompt)]
@@ -340,17 +323,8 @@ async def execute_agentic_chat_stream(
         logger.error(f"⚠️ Could not get prompt metadata: {e}")
         prompt_name, prompt_commit, prompt_source = None, None, None
 
-    # Core tools (fixed order) + dynamic app tools appended at end
+    # Core tools (fixed order)
     tools = list(CORE_TOOLS)
-
-    # Load tools from enabled apps (appended AFTER core tools to preserve cache prefix)
-    try:
-        app_tools = load_app_tools(uid)
-        tools.extend(app_tools)
-        if app_tools:
-            logger.info(f"🔧 Added {len(app_tools)} app tools to chat")
-    except Exception as e:
-        logger.error(f"⚠️ Error loading app tools: {e}")
 
     # Convert messages to LangChain format and prepend system message
     lc_messages = [SystemMessage(content=system_prompt)]

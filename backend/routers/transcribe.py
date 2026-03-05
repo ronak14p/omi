@@ -66,8 +66,6 @@ from models.message_event import (
 from models.transcript_segment import Translation
 from models.users import PlanType
 from utils.analytics import record_usage
-from utils.app_integrations import trigger_external_integrations, trigger_realtime_integrations
-from utils.apps import is_audio_bytes_app_enabled
 from utils.conversations.location import get_google_maps_location
 from utils.conversations.process_conversation import process_conversation, retrieve_in_progress_conversation
 from utils.notifications import send_credit_limit_notification, send_silent_user_notification
@@ -529,7 +527,7 @@ async def _stream_handler(
                 conversation.geolocation = get_google_maps_location(geolocation.latitude, geolocation.longitude)
 
             conversation = process_conversation(uid, language, conversation)
-            messages = trigger_external_integrations(uid, conversation)
+            messages = []
         except Exception as e:
             logger.error(f"Error processing conversation: {e} {uid} {session_id}")
             conversations_db.set_conversation_as_discarded(uid, conversation.id)
@@ -1052,9 +1050,7 @@ async def _stream_handler(
         audio_chunks: deque = deque()  # deque of bytes objects
         audio_total_size = 0  # Track total size for O(1) limit check
         audio_buffer_last_received: float = None  # Track when last audio was received
-        audio_bytes_enabled = (
-            bool(get_audio_bytes_webhook_seconds(uid)) or is_audio_bytes_app_enabled(uid) or private_cloud_sync_enabled
-        )
+        audio_bytes_enabled = bool(get_audio_bytes_webhook_seconds(uid)) or private_cloud_sync_enabled
 
         def audio_bytes_send(audio_bytes: bytes, received_at: float):
             nonlocal audio_chunks, audio_total_size, audio_buffer_last_received
@@ -1686,15 +1682,6 @@ async def _stream_handler(
 
                 if transcript_send is not None and user_has_credits:
                     transcript_send([segment.dict() for segment in transcript_segments])
-                elif not PUSHER_ENABLED and user_has_credits:
-                    # Fallback: trigger realtime integrations directly when pusher is disabled
-                    try:
-                        await trigger_realtime_integrations(
-                            uid, [s.dict() for s in transcript_segments], current_conversation_id
-                        )
-                    except Exception as e:
-                        logger.error(f"Error triggering realtime integrations: {e} {uid} {session_id}")
-
                 # Onboarding: pass segments to handler for answer detection
                 if onboarding_handler and not onboarding_handler.completed:
                     onboarding_handler.on_segments_received([s.dict() for s in transcript_segments])

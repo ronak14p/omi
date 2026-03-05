@@ -305,7 +305,6 @@ class Conversation(BaseModel):
     private_cloud_sync_enabled: bool = False
 
     apps_results: List[AppResult] = []
-    suggested_summarization_apps: List[str] = []
 
     # TODO: plugins_results for backward compatibility with the old memories routes and app
     plugins_results: List[PluginResult] = []

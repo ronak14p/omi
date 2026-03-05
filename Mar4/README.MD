@@ -171,3 +171,31 @@ Not executed in this environment (tooling unavailable):
 ## 8) Commit/Push Note
 
 This folder is intended as a dated session artifact package for Mar 4 and should remain as a stable reference for MVP transformation decisions and implementation traceability.
+
+## 9) Post-Mar4 Prune Completion (2026-03-05)
+
+`NEXT_PRUNE.MD` execution was completed with single-agent runtime hardening:
+
+- App-side prune completed:
+  - Removed runtime Apps/Payments/Persona/Referral surfaces and providers.
+  - Removed app picker/tab/deep-link paths.
+  - Removed conversation app-summary selector surfaces.
+  - Reduced settings drawer to MVP-relevant entries.
+- Backend-side prune completed:
+  - Removed non-MVP router mounts and deleted unmounted router files.
+  - Removed dynamic app tool loading path from agent execution.
+  - Removed app-summary preference/suggestion orchestration in conversation processing.
+  - Simplified notification router to core FCM/admin paths.
+  - Finished pusher cleanup for removed audio-app trigger buffers.
+- Web-side cleanup completed:
+  - Removed conversation `suggested_summarization_apps` legacy typing path.
+  - Removed in-panel template generation UI and suggested-app selector plumbing.
+  - Simplified conversation template-summary cards to render saved result content only.
+- Verification highlights:
+  - `backend/main.py` router-reduction query: clean.
+  - Backend app-surface query (`load_app_tools|preferred app|suggested_summarization_apps|/v1/apps|/v2/apps`): clean.
+  - App runtime queries are clean when excluding generated localization files (`app/lib/l10n/**`, `app/lib/gen/**`), which still intentionally retain historical localization keys.
+  - Web query `suggested_summarization_apps|suggestedAppIds|GenerateSummaryButton` under `web/app/src`: clean.
+- Environment limits in this execution context:
+  - `black`, `dart`, `flutter`, and `pytest` were not available, so format/test scripts could not be executed here.
+  - `next` was not available in this shell (`npm run lint` in `web/app` failed with `next: command not found`).

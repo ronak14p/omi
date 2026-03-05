@@ -1,4 +1,3 @@
-import os
 import random
 import re
 import threading
@@ -22,9 +21,7 @@ import database.folders as folders_db
 import database.calendar_meetings as calendar_db
 from database.vector_db import find_similar_memories, upsert_memory_vector, delete_memory_vector
 from utils.llm.memories import resolve_memory_conflict
-from database.apps import record_app_usage, get_omi_personas_by_uid_db, get_app_by_id_db
 from database.vector_db import upsert_vector2, update_vector_metadata
-from models.app import App, UsageHistoryType
 from models.memories import MemoryDB, Memory
 from models.conversation import *
 from models.conversation import (
@@ -39,13 +36,9 @@ from models.other import Person
 from models.task import Task, TaskStatus, TaskAction, TaskActionProvider
 from models.trend import Trend
 from models.notification_message import NotificationMessage
-from utils.apps import get_available_apps, update_personas_async, sync_update_persona_prompt
 from utils.llm.conversation_processing import (
     get_transcript_structure,
-    get_app_result,
     should_discard_conversation,
-    select_best_app_for_conversation,
-    get_suggested_apps_for_conversation,
     get_reprocess_transcript_structure,
     assign_conversation_to_folder,
     extract_action_items,
@@ -251,111 +244,16 @@ def _get_conversation_obj(
     return conversation
 
 
-# Function to get conversation summary apps from Redis
-def get_default_conversation_summarized_apps():
-    """
-    Get conversation summary apps from Redis.
-    Falls back to environment variable if Redis is empty.
-    """
-    default_apps = []
-
-    # Try to get from Redis first
-    redis_app_ids = redis_db.get_conversation_summary_app_ids()
-
-    if redis_app_ids:
-        # Use apps from Redis
-        for app_id in redis_app_ids:
-            app_data = get_app_by_id_db(app_id.strip())
-            if app_data:
-                default_apps.append(App(**app_data))
-    else:
-        # Fallback to environment variable for backward compatibility
-        env_app_ids = os.getenv(
-            'CONVERSATION_SUMMARIZED_APP_IDS', 'summary_assistant,action_item_extractor,insight_analyzer'
-        ).split(',')
-
-        for app_id in env_app_ids:
-            app_data = get_app_by_id_db(app_id.strip())
-            if app_data:
-                default_apps.append(App(**app_data))
-
-    return default_apps
-
-
 def _trigger_apps(
     uid: str,
     conversation: Conversation,
     is_reprocess: bool = False,
-    app_id: Optional[str] = None,
     language_code: str = 'en',
     people: List[Person] = None,
 ):
-    # Get default apps for auto-selection
-    default_apps = get_default_conversation_summarized_apps()
-    default_apps_dict = {app.id: app for app in default_apps}
-
-    # Also get user's installed apps (only used for preferred app lookup and reprocessing)
-    apps: List[App] = get_available_apps(uid)
-    conversation_apps = [app for app in apps if app.works_with_memories() and app.enabled]
-
-    # Combined dict for looking up preferred apps or specific app_id requests
-    all_apps_dict = {app.id: app for app in conversation_apps}
-    all_apps_dict.update(default_apps_dict)
-
-    # Combined list for suggestions: default apps + user's installed apps (no duplicates)
-    all_suggestion_apps = list(all_apps_dict.values())
-
-    app_to_run = None
-
-    # If a specific app_id is provided (for reprocessing), find and use it.
-    if app_id:
-        app_to_run = all_apps_dict.get(app_id)
-    else:
-        # Check preferred app first — skip the suggestion LLM call if user has one
-        preferred_app_id = redis_db.get_user_preferred_app(uid)
-        if preferred_app_id and preferred_app_id in all_apps_dict:
-            app_to_run = all_apps_dict.get(preferred_app_id)
-            logger.info(f"Using user's preferred app: {app_to_run.name} (id: {preferred_app_id})")
-        else:
-            # Only run suggestion LLM call when no preferred app is set
-            if not conversation.suggested_summarization_apps:
-                with track_usage(uid, Features.CONVERSATION_APPS):
-                    suggested_apps, reasoning = get_suggested_apps_for_conversation(conversation, all_suggestion_apps)
-                conversation.suggested_summarization_apps = suggested_apps
-                logger.info(f"Generated suggested apps for conversation {conversation.id}: {suggested_apps}")
-
-            if conversation.suggested_summarization_apps:
-                first_suggested_app_id = conversation.suggested_summarization_apps[0]
-                app_to_run = all_apps_dict.get(first_suggested_app_id)
-                if app_to_run:
-                    logger.info(f"Using first suggested app: {app_to_run.name}")
-                else:
-                    logger.warning(f"First suggested app '{first_suggested_app_id}' not found in apps.")
-
-    filtered_apps = [app_to_run] if app_to_run else []
-
-    if not filtered_apps:
-        logger.info(f"No summarization app selected for conversation {conversation.id} {uid}")
-
-    # Clear existing app results
+    # App-store summarization execution is removed in single-agent mode.
+    del uid, is_reprocess, language_code, people
     conversation.apps_results = []
-
-    threads = []
-
-    def execute_app(app):
-        with track_usage(uid, Features.CONVERSATION_APPS):
-            result = get_app_result(
-                conversation.get_transcript(False, people=people), conversation.photos, app, language_code=language_code
-            ).strip()
-        conversation.apps_results.append(AppResult(app_id=app.id, content=result))
-        if not is_reprocess:
-            record_app_usage(uid, app.id, UsageHistoryType.memory_created_prompt, conversation_id=conversation.id)
-
-    for app in filtered_apps:
-        threads.append(threading.Thread(target=execute_app, args=(app,)))
-
-    [t.start() for t in threads]
-    [t.join() for t in threads]
 
 
 def _update_goal_progress(uid: str, conversation: Conversation):
@@ -587,26 +485,12 @@ def save_structured_vector(uid: str, conversation: Conversation, update_only: bo
         update_vector_metadata(uid, conversation.id, metadata)
 
 
-def _update_personas_async(uid: str):
-    logger.info(f"[PERSONAS] Starting persona updates in background thread for uid={uid}")
-    personas = get_omi_personas_by_uid_db(uid)
-    if personas:
-        threads = []
-        for persona in personas:
-            threads.append(threading.Thread(target=sync_update_persona_prompt, args=(persona,)))
-
-        [t.start() for t in threads]
-        [t.join() for t in threads]
-        logger.info(f"[PERSONAS] Finished persona updates in background thread for uid={uid}")
-
-
 def process_conversation(
     uid: str,
     language_code: str,
     conversation: Union[Conversation, CreateConversation, ExternalIntegrationCreateConversation],
     force_process: bool = False,
     is_reprocess: bool = False,
-    app_id: Optional[str] = None,
 ) -> Conversation:
     # Fetch meeting context from Firestore if meeting_id is associated with this conversation
     if hasattr(conversation, 'id') and conversation.id:
@@ -689,9 +573,7 @@ def process_conversation(
         if insights_gained > 0:
             record_usage(uid, insights_gained=insights_gained)
 
-        _trigger_apps(
-            uid, conversation, is_reprocess=is_reprocess, app_id=app_id, language_code=language_code, people=people
-        )
+        _trigger_apps(uid, conversation, is_reprocess=is_reprocess, language_code=language_code, people=people)
         (
             threading.Thread(
                 target=save_structured_vector,
@@ -737,9 +619,6 @@ def process_conversation(
                 conversation,
             ),
         ).start()
-        # Update persona prompts with new conversation
-        threading.Thread(target=update_personas_async, args=(uid,)).start()
-
         # Disable important conversation for now
         # Send important conversation notification for long conversations (>30 minutes)
         # threading.Thread(

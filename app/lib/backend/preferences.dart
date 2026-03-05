@@ -3,7 +3,6 @@ import 'dart:convert';
 import 'package:collection/collection.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
-import 'package:omi/backend/schema/app.dart';
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
 import 'package:omi/backend/schema/conversation.dart';
 import 'package:omi/backend/schema/memory.dart';
@@ -376,11 +375,6 @@ class SharedPreferencesUtil {
 
   set previousStorageBytes(int value) => saveInt('previousStorageBytes', value);
 
-  int get enabledAppsCount => appsList.where((element) => element.enabled).length;
-
-  int get enabledAppsIntegrationsCount =>
-      appsList.where((element) => element.enabled && element.worksExternally()).length;
-
   bool get showConversationDeleteConfirmation => getBool('showConversationDeleteConfirmation', defaultValue: true);
 
   set showConversationDeleteConfirmation(bool value) => saveBool("showConversationDeleteConfirmation", value);
@@ -392,46 +386,6 @@ class SharedPreferencesUtil {
   bool get showGetOmiCard => getBool('showGetOmiCard', defaultValue: true);
 
   set showGetOmiCard(bool value) => saveBool('showGetOmiCard', value);
-
-  List<App> get appsList {
-    final apps = getStringList('appsList');
-    return App.fromJsonList(apps.map((e) => jsonDecode(e)).toList());
-  }
-
-  set appsList(List<App> value) {
-    final List<String> apps = value.map((e) => jsonEncode(e.toJson())).toList();
-    saveStringList('appsList', apps);
-  }
-
-  enableApp(String value) {
-    final List<App> apps = appsList;
-    App? app = apps.firstWhereOrNull((element) => element.id == value);
-    if (app != null) {
-      app.enabled = true;
-      appsList = apps;
-    }
-  }
-
-  disableApp(String value) {
-    final List<App> apps = appsList;
-    App? app = apps.firstWhereOrNull((element) => element.id == value);
-    if (app != null) {
-      app.enabled = false;
-      appsList = apps;
-    }
-  }
-
-  String get selectedChatAppId => getString('selectedChatAppId2', defaultValue: 'no_selected');
-
-  set selectedChatAppId(String value) => saveString('selectedChatAppId2', value);
-
-  String get lastUsedSummarizationAppId => getString('lastUsedSummarizationAppId');
-
-  set lastUsedSummarizationAppId(String value) => saveString('lastUsedSummarizationAppId', value);
-
-  String get preferredSummarizationAppId => getString('preferredSummarizationAppId');
-
-  set preferredSummarizationAppId(String value) => saveString('preferredSummarizationAppId', value);
 
   List<ServerConversation> get cachedConversations {
     if (getBool('migratedMemories')) {

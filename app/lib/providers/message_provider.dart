@@ -13,14 +13,11 @@ import 'package:uuid/uuid.dart';
 
 import 'package:omi/services/agent_chat_service.dart' show agentLog, initAgentLog;
 import 'package:omi/backend/http/api/agents.dart';
-import 'package:omi/backend/http/api/apps.dart';
 import 'package:omi/backend/http/api/messages.dart';
 import 'package:omi/backend/http/api/users.dart';
 import 'package:omi/backend/preferences.dart';
-import 'package:omi/backend/schema/app.dart';
 import 'package:omi/backend/schema/bt_device/bt_device.dart';
 import 'package:omi/backend/schema/message.dart';
-import 'package:omi/providers/app_provider.dart';
 import 'package:omi/main.dart';
 import 'package:omi/services/agent_chat_service.dart';
 import 'package:omi/utils/alerts/app_snackbar.dart';
@@ -40,7 +37,6 @@ class MessageProvider extends ChangeNotifier {
     }
   }
 
-  AppProvider? appProvider;
   List<ServerMessage> messages = [];
   bool _isNextMessageFromVoice = false;
 
@@ -60,18 +56,11 @@ class MessageProvider extends ChangeNotifier {
 
   String firstTimeLoadingText = '';
 
-  List<App> chatApps = [];
-  bool isLoadingChatApps = false;
-
   List<File> selectedFiles = [];
   List<String> selectedFileTypes = [];
   List<MessageFile> uploadedFiles = [];
   bool isUploadingFiles = false;
   Map<String, bool> uploadingFiles = {};
-
-  void updateAppProvider(AppProvider p) {
-    appProvider = p;
-  }
 
   void startVmKeepalive() {
     if (!SharedPreferencesUtil().claudeAgentEnabled) return;
@@ -123,37 +112,6 @@ class MessageProvider extends ChangeNotifier {
     return null;
   }
 
-  void setChatApps(List<App> apps) {
-    chatApps = apps;
-    notifyListeners();
-  }
-
-  void removeChatApp(String appId) {
-    chatApps.removeWhere((app) => app.id == appId);
-    notifyListeners();
-  }
-
-  Future<void> fetchChatApps() async {
-    if (isLoadingChatApps) return;
-
-    isLoadingChatApps = true;
-    notifyListeners();
-
-    try {
-      final result = await retrieveAppsSearch(
-        installedApps: true,
-        limit: 50,
-      );
-
-      chatApps = result.apps.where((app) => app.worksWithChat()).toList();
-    } catch (e) {
-      Logger.debug('Error fetching chat apps: $e');
-      chatApps = [];
-    } finally {
-      isLoadingChatApps = false;
-      notifyListeners();
-    }
-  }
 
   void setNextMessageOriginIsVoice(bool isVoice) {
     _isNextMessageFromVoice = isVoice;
@@ -199,7 +157,7 @@ class MessageProvider extends ChangeNotifier {
       selectedFiles.addAll(filesToAdd);
       selectedFileTypes.addAll(typesToAdd);
       try {
-        await uploadFiles(filesToAdd, appProvider?.selectedChatAppId);
+        await uploadFiles(filesToAdd, null);
       } catch (e) {
         Logger.debug('Failed to upload files: $e');
         if (selectedFiles.length >= filesToAdd.length) {
@@ -254,7 +212,7 @@ class MessageProvider extends ChangeNotifier {
         selectedFiles.add(File(res.path));
         selectedFileTypes.add('image');
         var index = selectedFiles.length - 1;
-        await uploadFiles([selectedFiles[index]], appProvider?.selectedChatAppId);
+        await uploadFiles([selectedFiles[index]], null);
         notifyListeners();
       }
     } on PlatformException catch (e) {
@@ -328,7 +286,7 @@ class MessageProvider extends ChangeNotifier {
       if (files.isNotEmpty) {
         selectedFiles.addAll(files);
         selectedFileTypes.addAll(files.map((e) => 'image'));
-        await uploadFiles(files, appProvider?.selectedChatAppId);
+        await uploadFiles(files, null);
       }
       notifyListeners();
     } on PlatformException catch (e) {
@@ -374,7 +332,7 @@ class MessageProvider extends ChangeNotifier {
         if (files.isNotEmpty) {
           selectedFiles.addAll(files);
           selectedFileTypes.addAll(files.map((e) => 'file'));
-          await uploadFiles(files, appProvider?.selectedChatAppId);
+          await uploadFiles(files, null);
         }
         notifyListeners();
       }
@@ -462,7 +420,6 @@ class MessageProvider extends ChangeNotifier {
     }
     setLoadingMessages(true);
     var mes = await getMessagesServer(
-      appId: appProvider?.selectedChatAppId,
       dropdownSelected: dropdownSelected,
     );
     if (!hasCachedMessages) {
@@ -486,7 +443,7 @@ class MessageProvider extends ChangeNotifier {
 
   Future clearChat() async {
     setClearingChat(true);
-    var mes = await clearChatServer(appId: appProvider?.selectedChatAppId);
+    var mes = await clearChatServer();
     messages = mes;
     messages.sort((a, b) => a.createdAt.compareTo(b.createdAt));
     setClearingChat(false);
@@ -495,10 +452,6 @@ class MessageProvider extends ChangeNotifier {
 
   void addMessageLocally(String messageText) {
     List<String> fileIds = uploadedFiles.map((e) => e.id).toList();
-    var appId = appProvider?.selectedChatAppId;
-    if (appId == 'no_selected') {
-      appId = null;
-    }
     // Use local file paths as thumbnails so images display immediately
     List<MessageFile> localFiles = List.from(uploadedFiles);
     for (int i = 0; i < localFiles.length && i < selectedFiles.length; i++) {
@@ -512,7 +465,7 @@ class MessageProvider extends ChangeNotifier {
       messageText,
       MessageSender.human,
       MessageType.text,
-      appId,
+      null,
       false,
       localFiles,
       fileIds,
@@ -541,17 +494,9 @@ class MessageProvider extends ChangeNotifier {
       codec?.getFrameSize() ?? 160,
     );
 
-    var currentAppId = appProvider?.selectedChatAppId;
-    if (currentAppId == 'no_selected') {
-      currentAppId = null;
-    }
-    String chatTargetId = currentAppId ?? 'omi';
-    App? targetApp = currentAppId != null ? appProvider?.apps.firstWhereOrNull((app) => app.id == currentAppId) : null;
-    bool isPersonaChat = targetApp != null ? !targetApp.isNotPersona() : false;
-
     MixpanelManager().chatVoiceInputUsed(
-      chatTargetId: chatTargetId,
-      isPersonaChat: isPersonaChat,
+      chatTargetId: 'omi',
+      isPersonaChat: false,
     );
 
     // Route voice through the same agent path when Claude Agent is enabled so
@@ -646,21 +591,13 @@ class MessageProvider extends ChangeNotifier {
   Future sendMessageStreamToServer(String text) async {
     aiStreamProgress = 0.0;
     setShowTypingIndicator(true);
-    var currentAppId = appProvider?.selectedChatAppId;
-    if (currentAppId == 'no_selected') {
-      currentAppId = null;
-    }
-
-    String chatTargetId = currentAppId ?? 'omi';
-    App? targetApp = currentAppId != null ? appProvider?.apps.firstWhereOrNull((app) => app.id == currentAppId) : null;
-    bool isPersonaChat = targetApp != null ? !targetApp.isNotPersona() : false;
 
     MixpanelManager().chatMessageSent(
       message: text,
       includesFiles: uploadedFiles.isNotEmpty,
       numberOfFiles: uploadedFiles.length,
-      chatTargetId: chatTargetId,
-      isPersonaChat: isPersonaChat,
+      chatTargetId: 'omi',
+      isPersonaChat: false,
       isVoiceInput: _isNextMessageFromVoice,
     );
     _isNextMessageFromVoice = false;
@@ -668,15 +605,14 @@ class MessageProvider extends ChangeNotifier {
     // Route through agent VM if Claude Agent is enabled
     if (SharedPreferencesUtil().claudeAgentEnabled) {
       agentLog('[MessageProvider] claudeAgentEnabled=true, routing through agent VM');
-      await _sendMessageViaAgent(text, currentAppId);
+      await _sendMessageViaAgent(text);
       return;
     }
 
     await initAgentLog();
-    agentLog(
-        '[MessageProvider] sending via /v2/messages — appId=$currentAppId, text="${text.length > 80 ? text.substring(0, 80) : text}"');
+    agentLog('[MessageProvider] sending via /v2/messages — text="${text.length > 80 ? text.substring(0, 80) : text}"');
 
-    var message = ServerMessage.empty(appId: currentAppId);
+    var message = ServerMessage.empty();
     messages.add(message);
     final aiIndex = messages.length - 1;
     notifyListeners();
@@ -698,7 +634,7 @@ class MessageProvider extends ChangeNotifier {
     }
 
     try {
-      await for (var chunk in sendMessageStreamServer(text, appId: currentAppId, filesId: fileIds)) {
+      await for (var chunk in sendMessageStreamServer(text, filesId: fileIds)) {
         chunkCount++;
         if (chunk.type == MessageChunkType.think) {
           flushBuffer();
@@ -750,8 +686,8 @@ class MessageProvider extends ChangeNotifier {
     }
   }
 
-  Future _sendMessageViaAgent(String text, String? appId) async {
-    var message = ServerMessage.empty(appId: appId);
+  Future _sendMessageViaAgent(String text) async {
+    var message = ServerMessage.empty();
     messages.add(message);
     final aiIndex = messages.length - 1;
     notifyListeners();
@@ -1033,18 +969,6 @@ class MessageProvider extends ChangeNotifier {
       setShowTypingIndicator(false);
       setSendingMessage(false);
     }
-  }
-
-  Future sendInitialAppMessage(App? app) async {
-    setSendingMessage(true);
-    ServerMessage message = await getInitialAppMessage(app?.id);
-    addMessage(message);
-    setSendingMessage(false);
-    notifyListeners();
-  }
-
-  App? messageSenderApp(String? appId) {
-    return appProvider?.apps.firstWhereOrNull((p) => p.id == appId);
   }
 
   Future<void> _handleAskAIMethodCall(MethodCall call) async {

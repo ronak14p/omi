@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import 'package:omi/backend/http/api/apps.dart' as apps_api;
 import 'package:omi/backend/preferences.dart';
 import 'package:omi/env/env.dart';
 import 'package:omi/main.dart';
@@ -222,7 +221,7 @@ class AuthenticationProvider extends BaseProvider {
         if (oldUserId != null) {
           final newUserId = FirebaseAuth.instance.currentUser?.uid;
           if (newUserId != null) {
-            await migrateAppOwnerId(oldUserId);
+            Logger.debug('Skipped legacy app owner migration for user $oldUserId');
           }
         }
         return;
@@ -260,7 +259,7 @@ class AuthenticationProvider extends BaseProvider {
           SharedPreferencesUtil().email = FirebaseAuth.instance.currentUser?.email ?? '';
           SharedPreferencesUtil().givenName = FirebaseAuth.instance.currentUser?.displayName?.split(' ')[0] ?? '';
           if (oldUserId != null && newUserId != null) {
-            await migrateAppOwnerId(oldUserId);
+            Logger.debug('Skipped legacy app owner migration for user $oldUserId');
           }
           return;
         }
@@ -278,7 +277,4 @@ class AuthenticationProvider extends BaseProvider {
     }
   }
 
-  Future<bool> migrateAppOwnerId(String oldId) async {
-    return await apps_api.migrateAppOwnerId(oldId);
-  }
 }

@@ -11,35 +11,27 @@ from fastapi.responses import StreamingResponse
 from multipart.multipart import shutil
 
 import database.chat as chat_db
-import database.conversations as conversations_db
-from database.apps import record_app_usage
-from models.app import App, UsageHistoryType
 from models.chat import (
     ChatSession,
     Message,
     SendMessageRequest,
-    MessageSender,
     ResponseMessage,
     MessageConversation,
     FileChat,
 )
 from models.conversation import Conversation
 from routers.sync import retrieve_file_paths, decode_files_to_wav
-from utils.apps import get_available_app_by_id
 from utils.chat import (
-    process_voice_message_segment,
     process_voice_message_segment_stream,
     resolve_voice_message_language,
     transcribe_voice_message_segment,
 )
-from utils.llm.persona import initial_persona_chat_message
 from utils.llm.chat import initial_chat_message
 from utils.llm.goals import extract_and_update_goal_progress
 from utils.other import endpoints as auth, storage
 from utils.other.chat_file import FileChatTool
-from utils.retrieval.graph import execute_graph_chat, execute_graph_chat_stream, execute_persona_chat_stream
+from utils.retrieval.graph import execute_graph_chat_stream
 from utils.llm.usage_tracker import set_usage_context, reset_usage_context, Features
-from utils.retrieval.agentic import execute_agentic_chat, execute_agentic_chat_stream
 import logging
 
 logger = logging.getLogger(__name__)
@@ -47,15 +39,15 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-def filter_messages(messages, app_id):
-    logger.info(f'filter_messages {len(messages)} {app_id}')
-    collected = []
-    for message in messages:
-        if message.sender == MessageSender.ai and message.plugin_id != app_id:
-            break
-        collected.append(message)
-    logger.info(f'filter_messages output: {len(collected)}')
-    return collected
+def _resolve_legacy_app_id(app_id: Optional[str], plugin_id: Optional[str]) -> None:
+    """
+    Keep legacy query/body compatibility but force all chat traffic into the
+    single-assistant thread.
+    """
+    legacy_value = app_id or plugin_id
+    if legacy_value and legacy_value not in ['null', '']:
+        logger.info(f'Ignoring legacy app/plugin id in single-agent mode: {legacy_value}')
+    return None
 
 
 def acquire_chat_session(uid: str, app_id: Optional[str] = None):
@@ -73,14 +65,11 @@ def send_message(
     app_id: Optional[str] = None,
     uid: str = Depends(auth.get_current_user_uid),
 ):
-    compat_app_id = app_id or plugin_id
-    logger.info(f'send_message {data.text} {compat_app_id} {uid}')
-
-    if compat_app_id in ['null', '']:
-        compat_app_id = None
+    resolved_app_id = _resolve_legacy_app_id(app_id, plugin_id)
+    logger.info(f'send_message {data.text} {resolved_app_id} {uid}')
 
     # get chat session
-    chat_session = chat_db.get_chat_session(uid, app_id=compat_app_id)
+    chat_session = chat_db.get_chat_session(uid, app_id=resolved_app_id)
     chat_session = ChatSession(**chat_session) if chat_session else None
 
     message = Message(
@@ -89,11 +78,11 @@ def send_message(
         created_at=datetime.now(timezone.utc),
         sender='human',
         type='text',
-        app_id=compat_app_id,
+        app_id=resolved_app_id,
     )
     # Ensure chat session exists when files are attached
     if data.file_ids and not chat_session:
-        chat_session = acquire_chat_session(uid, compat_app_id)
+        chat_session = acquire_chat_session(uid, resolved_app_id)
         chat_session = ChatSession(**chat_session) if isinstance(chat_session, dict) else chat_session
 
     if data.file_ids is not None and chat_session:
@@ -116,12 +105,7 @@ def send_message(
     # Check for goal progress (background)
     threading.Thread(target=extract_and_update_goal_progress, args=(uid, data.text)).start()
 
-    app = get_available_app_by_id(compat_app_id, uid)
-    app = App(**app) if app else None
-
-    app_id_from_app = app.id if app else None
-
-    messages = list(reversed([Message(**msg) for msg in chat_db.get_messages(uid, limit=10, app_id=compat_app_id)]))
+    messages = list(reversed([Message(**msg) for msg in chat_db.get_messages(uid, limit=10, app_id=resolved_app_id)]))
 
     def process_message(response: str, callback_data: dict):
         memories = callback_data.get('memories_found', [])
@@ -153,7 +137,7 @@ def send_message(
             text=response,
             created_at=datetime.now(timezone.utc),
             sender='ai',
-            app_id=app_id_from_app,
+            app_id=resolved_app_id,
             type='text',
             memories_id=memories_id,
             chart_data=chart_data,
@@ -167,8 +151,6 @@ def send_message(
 
         chat_db.add_message(uid, ai_message.dict())
         ai_message.memories = [MessageConversation(**m) for m in (memories if len(memories) < 5 else memories[:5])]
-        if app_id:
-            record_app_usage(uid, app_id, UsageHistoryType.chat_message_sent, message_id=ai_message.id)
 
         return ai_message, ask_for_nps
 
@@ -181,7 +163,7 @@ def send_message(
             async for chunk in execute_graph_chat_stream(
                 uid,
                 messages,
-                app,
+                None,
                 cited=True,
                 callback_data=callback_data,
                 chat_session=chat_session,
@@ -224,15 +206,13 @@ def report_message(message_id: str, uid: str = Depends(auth.get_current_user_uid
 def clear_chat_messages(
     app_id: Optional[str] = None, plugin_id: Optional[str] = None, uid: str = Depends(auth.get_current_user_uid)
 ):
-    compat_app_id = app_id or plugin_id
-    if compat_app_id in ['null', '']:
-        compat_app_id = None
+    resolved_app_id = _resolve_legacy_app_id(app_id, plugin_id)
 
     # get current chat session
-    chat_session = chat_db.get_chat_session(uid, app_id=compat_app_id)
+    chat_session = chat_db.get_chat_session(uid, app_id=resolved_app_id)
     chat_session_id = chat_session['id'] if chat_session else None
 
-    err = chat_db.clear_chat(uid, app_id=compat_app_id, chat_session_id=chat_session_id)
+    err = chat_db.clear_chat(uid, app_id=resolved_app_id, chat_session_id=chat_session_id)
     if err:
         raise HTTPException(status_code=500, detail='Failed to clear chat')
 
@@ -249,39 +229,32 @@ def clear_chat_messages(
     if chat_session_id is not None:
         chat_db.delete_chat_session(uid, chat_session_id)
 
-    return initial_message_util(uid, compat_app_id)
+    return initial_message_util(uid, resolved_app_id)
 
 
 def initial_message_util(uid: str, app_id: Optional[str] = None):
-    logger.info(f'initial_message_util {app_id}')
+    resolved_app_id = _resolve_legacy_app_id(app_id, None)
+    logger.info(f'initial_message_util {resolved_app_id}')
 
     # init chat session
-    chat_session = acquire_chat_session(uid, app_id=app_id)
+    chat_session = acquire_chat_session(uid, app_id=resolved_app_id)
 
-    prev_messages = list(reversed(chat_db.get_messages(uid, limit=5, app_id=app_id)))
-    logger.info(f'initial_message_util returned {len(prev_messages)} prev messages for {app_id}')
+    prev_messages = list(reversed(chat_db.get_messages(uid, limit=5, app_id=resolved_app_id)))
+    logger.info(f'initial_message_util returned {len(prev_messages)} prev messages for {resolved_app_id}')
 
-    app = get_available_app_by_id(app_id, uid)
-    app = App(**app) if app else None
-
-    # persona
-    text: str
-    if app and app.is_a_persona():
-        text = initial_persona_chat_message(uid, app, prev_messages)
-    else:
-        prev_messages_str = ''
-        if prev_messages:
-            prev_messages_str = 'Previous conversation history:\n'
-            prev_messages_str += Message.get_messages_as_string([Message(**msg) for msg in prev_messages])
-        logger.info(f'initial_message_util {len(prev_messages_str)} {app_id}')
-        text = initial_chat_message(uid, app, prev_messages_str)
+    prev_messages_str = ''
+    if prev_messages:
+        prev_messages_str = 'Previous conversation history:\n'
+        prev_messages_str += Message.get_messages_as_string([Message(**msg) for msg in prev_messages])
+    logger.info(f'initial_message_util {len(prev_messages_str)} {resolved_app_id}')
+    text = initial_chat_message(uid, None, prev_messages_str)
 
     ai_message = Message(
         id=str(uuid.uuid4()),
         text=text,
         created_at=datetime.now(timezone.utc),
         sender='ai',
-        app_id=app_id,
+        app_id=resolved_app_id,
         from_external_integration=False,
         type='text',
         memories_id=[],
@@ -296,25 +269,23 @@ def initial_message_util(uid: str, app_id: Optional[str] = None):
 def create_initial_message(
     app_id: Optional[str] = None, plugin_id: Optional[str] = None, uid: str = Depends(auth.get_current_user_uid)
 ):
-    compat_app_id = app_id or plugin_id
-    return initial_message_util(uid, compat_app_id)
+    resolved_app_id = _resolve_legacy_app_id(app_id, plugin_id)
+    return initial_message_util(uid, resolved_app_id)
 
 
 @router.get('/v2/messages', response_model=List[Message], tags=['chat'])
 def get_messages(
     plugin_id: Optional[str] = None, app_id: Optional[str] = None, uid: str = Depends(auth.get_current_user_uid)
 ):
-    compat_app_id = app_id or plugin_id
-    if compat_app_id in ['null', '']:
-        compat_app_id = None
+    resolved_app_id = _resolve_legacy_app_id(app_id, plugin_id)
 
-    chat_session = chat_db.get_chat_session(uid, app_id=compat_app_id)
+    chat_session = chat_db.get_chat_session(uid, app_id=resolved_app_id)
     chat_session_id = chat_session['id'] if chat_session else None
 
     messages = chat_db.get_messages(
-        uid, limit=100, include_conversations=True, app_id=compat_app_id, chat_session_id=chat_session_id
+        uid, limit=100, include_conversations=True, app_id=resolved_app_id, chat_session_id=chat_session_id
     )
-    logger.info(f'get_messages {len(messages)} {compat_app_id}')
+    logger.info(f'get_messages {len(messages)} {resolved_app_id}')
 
     # Debug: Check for messages with ratings
     rated_messages = [m for m in messages if m.get('rating') is not None]
@@ -324,7 +295,7 @@ def get_messages(
             logger.info(f"  - Message {m.get('id')}: rating={m.get('rating')}")
 
     if not messages:
-        return [initial_message_util(uid, compat_app_id)]
+        return [initial_message_util(uid, resolved_app_id)]
     return messages
 
 
@@ -567,15 +538,13 @@ def report_message(message_id: str, uid: str = Depends(auth.get_current_user_uid
 def clear_chat_messages(
     plugin_id: Optional[str] = None, app_id: Optional[str] = None, uid: str = Depends(auth.get_current_user_uid)
 ):
-    compat_app_id = app_id or plugin_id
-    if compat_app_id in ['null', '']:
-        compat_app_id = None
+    resolved_app_id = _resolve_legacy_app_id(app_id, plugin_id)
 
     # get current chat session
-    chat_session = chat_db.get_chat_session(uid, app_id=compat_app_id)
+    chat_session = chat_db.get_chat_session(uid, app_id=resolved_app_id)
     chat_session_id = chat_session['id'] if chat_session else None
 
-    err = chat_db.clear_chat(uid, app_id=compat_app_id, chat_session_id=chat_session_id)
+    err = chat_db.clear_chat(uid, app_id=resolved_app_id, chat_session_id=chat_session_id)
     if err:
         raise HTTPException(status_code=500, detail='Failed to clear chat')
 
@@ -592,12 +561,12 @@ def clear_chat_messages(
     if chat_session_id is not None:
         chat_db.delete_chat_session(uid, chat_session_id)
 
-    return initial_message_util(uid, compat_app_id)
+    return initial_message_util(uid, resolved_app_id)
 
 
 @router.post('/v1/initial-message', tags=['chat'], response_model=Message)
 def create_initial_message(
     plugin_id: Optional[str] = None, app_id: Optional[str] = None, uid: str = Depends(auth.get_current_user_uid)
 ):
-    compat_app_id = app_id or plugin_id
-    return initial_message_util(uid, compat_app_id)
+    resolved_app_id = _resolve_legacy_app_id(app_id, plugin_id)
+    return initial_message_util(uid, resolved_app_id)

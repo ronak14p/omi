@@ -42,10 +42,6 @@ import 'widgets/share_to_contacts_sheet.dart';
 
 import 'package:omi/backend/preferences.dart';
 
-// import 'share.dart';
-// import 'package:omi/pages/settings/developer.dart';
-// import 'package:omi/backend/http/webhooks.dart';
-
 class ConversationDetailPage extends StatefulWidget {
   final ServerConversation conversation;
   final bool isFromOnboarding;

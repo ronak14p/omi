@@ -102,7 +102,6 @@ export interface Conversation {
   photos: ConversationPhoto[];
   audio_files: AudioFile[];
   apps_results: AppResponse[];  // Note: backend uses 'apps_results' (with 's')
-  suggested_summarization_apps: string[];
   source: string | null;
   language: string | null;
   external_integration: Record<string, unknown> | null;

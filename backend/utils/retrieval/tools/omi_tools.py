@@ -3,7 +3,7 @@ Tools for answering questions about the Omi/Friend product.
 """
 
 from langchain_core.tools import tool
-from utils.app_integrations import get_github_docs_content
+from utils.retrieval.omi_docs import get_omi_docs_content
 
 
 @tool
@@ -38,7 +38,7 @@ def get_omi_product_info_tool(query: str) -> str:
         Returns documentation about firmware updates and device management
     """
     # Get GitHub docs content
-    context = get_github_docs_content()
+    context = get_omi_docs_content()
 
     # Format context as a comprehensive documentation string
     context_str = 'Omi/Friend Product Documentation:\n\n'

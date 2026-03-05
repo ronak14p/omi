@@ -32,7 +32,6 @@ from utils.llm.conversation_processing import generate_summary_with_prompt
 from utils.speaker_identification import extract_speaker_samples
 from utils.other import endpoints as auth
 from utils.other.storage import get_conversation_recording_if_exists
-from utils.app_integrations import trigger_external_integrations
 from utils.conversations.location import get_google_maps_location
 import logging
 
@@ -81,23 +80,19 @@ def process_in_progress_conversation(
 
     conversations_db.update_conversation_status(uid, conversation.id, ConversationStatus.processing)
     conversation = process_conversation(uid, conversation.language, conversation, force_process=True)
-    messages = trigger_external_integrations(uid, conversation)
-
-    return CreateConversationResponse(conversation=conversation, messages=messages)
+    return CreateConversationResponse(conversation=conversation, messages=[])
 
 
 @router.post('/v1/conversations/{conversation_id}/reprocess', response_model=Conversation, tags=['conversations'])
 def reprocess_conversation(
     conversation_id: str,
     language_code: Optional[str] = None,
-    app_id: Optional[str] = None,
     uid: str = Depends(auth.get_current_user_uid),
 ):
     """
     Whenever a user wants to reprocess a conversation, or wants to force process a discarded one
     :param conversation_id: The ID of the conversation to reprocess
     :param language_code: Optional language code to use for processing
-    :param app_id: Optional app ID to use for processing (if provided, only this app will be triggered)
     :return: The updated conversation after reprocessing.
     """
     conversation = _get_valid_conversation_by_id(uid, conversation_id)
@@ -105,9 +100,7 @@ def reprocess_conversation(
     if not language_code:
         language_code = conversation.language or 'en'
 
-    processed_conversation = process_conversation(
-        uid, language_code, conversation, force_process=True, is_reprocess=True, app_id=app_id
-    )
+    processed_conversation = process_conversation(uid, language_code, conversation, force_process=True, is_reprocess=True)
 
     return processed_conversation
 
@@ -147,7 +140,6 @@ def get_conversations(
             conv['structured']['events'] = []
             conv['apps_results'] = []
             conv['plugins_results'] = []
-            conv['suggested_summarization_apps'] = []
     return conversations
 
 
@@ -519,40 +511,6 @@ def search_conversations_endpoint(search_request: SearchRequest, uid: str = Depe
         start_date=start_timestamp,
         end_date=end_timestamp,
     )
-
-
-@router.get("/v1/conversations/{conversation_id}/suggested-apps", response_model=dict, tags=['conversations'])
-def get_conversation_suggested_apps(conversation_id: str, uid: str = Depends(auth.get_current_user_uid)):
-    from utils.apps import get_available_apps, get_available_app_by_id_with_reviews
-    from models.app import App
-
-    conversation_data = _get_valid_conversation_by_id(uid, conversation_id)
-    conversation = Conversation(**conversation_data)
-
-    # Get suggested app models with full data (similar to /v1/apps endpoint)
-    suggested_apps = []
-    for app_id in conversation.suggested_summarization_apps:
-        app_data = get_available_app_by_id_with_reviews(app_id, uid)
-        if app_data:
-            app = App(**app_data)
-            # Add user-specific data
-            from utils.apps import get_is_user_paid_app
-
-            app.is_user_paid = get_is_user_paid_app(app.id, uid)
-
-            # Add payment link with user reference
-            if app.payment_link:
-                app.payment_link = f'{app.payment_link}?client_reference_id=uid_{uid}'
-
-            # Generate thumbnail URLs if thumbnails exist
-            if app.thumbnails:
-                from utils.other.storage import get_app_thumbnail_url
-
-                app.thumbnail_urls = [get_app_thumbnail_url(thumbnail_id) for thumbnail_id in app.thumbnails]
-
-            suggested_apps.append(app)
-
-    return {"suggested_apps": [app.dict() for app in suggested_apps], "conversation_id": conversation_id}
 
 
 @router.post("/v1/conversations/{conversation_id}/test-prompt", response_model=dict, tags=['conversations'])

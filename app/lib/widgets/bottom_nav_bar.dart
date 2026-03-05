@@ -73,27 +73,7 @@ class BottomNavBar extends StatelessWidget {
                     ),
                     // Center space for record button - only when no OMI device is connected
                     if (showCenterButton && !isOmiDeviceConnected) const SizedBox(width: 80),
-                    // Apps tab
-                    Expanded(
-                      child: InkWell(
-                        onTap: () {
-                          HapticFeedback.mediumImpact();
-                          MixpanelManager().bottomNavigationTabClicked('Apps');
-                          primaryFocus?.unfocus();
-                          onTabTap(3, home.selectedIndex == 3);
-                        },
-                        child: SizedBox(
-                          height: 90,
-                          child: Center(
-                            child: Icon(
-                              FontAwesomeIcons.puzzlePiece,
-                              color: home.selectedIndex == 3 ? Colors.white : Colors.grey,
-                              size: 26,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
+                    const Spacer(),
                   ],
                 ),
               ),

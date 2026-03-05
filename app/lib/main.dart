@@ -31,13 +31,8 @@ import 'package:omi/firebase_options_dev.dart' as dev;
 import 'package:omi/firebase_options_prod.dart' as prod;
 import 'package:omi/flavors.dart';
 import 'package:omi/l10n/app_localizations.dart';
-import 'package:omi/pages/apps/providers/add_app_provider.dart';
 import 'package:omi/pages/conversation_detail/conversation_detail_provider.dart';
-import 'package:omi/pages/payments/payment_method_provider.dart';
-import 'package:omi/pages/persona/persona_provider.dart';
-import 'package:omi/pages/settings/ai_app_generator_provider.dart';
 import 'package:omi/providers/announcement_provider.dart';
-import 'package:omi/providers/app_provider.dart';
 import 'package:omi/providers/auth_provider.dart';
 import 'package:omi/providers/calendar_provider.dart';
 import 'package:omi/providers/capture_provider.dart';
@@ -46,17 +41,13 @@ import 'package:omi/providers/conversation_provider.dart';
 import 'package:omi/providers/developer_mode_provider.dart';
 import 'package:omi/providers/device_provider.dart';
 import 'package:omi/providers/folder_provider.dart';
-import 'package:omi/providers/goals_provider.dart';
 import 'package:omi/providers/home_provider.dart';
-import 'package:omi/providers/integration_provider.dart';
 import 'package:omi/providers/locale_provider.dart';
-import 'package:omi/providers/mcp_provider.dart';
 import 'package:omi/providers/message_provider.dart';
 import 'package:omi/providers/onboarding_provider.dart';
 import 'package:omi/providers/people_provider.dart';
 import 'package:omi/providers/speech_profile_provider.dart';
 import 'package:omi/providers/sync_provider.dart';
-import 'package:omi/providers/task_integration_provider.dart';
 import 'package:omi/providers/usage_provider.dart';
 import 'package:omi/providers/user_provider.dart';
 import 'package:omi/providers/voice_recorder_provider.dart';
@@ -71,7 +62,6 @@ import 'package:omi/utils/debugging/crashlytics_manager.dart';
 import 'package:omi/utils/enums.dart';
 import 'package:omi/utils/l10n_extensions.dart';
 import 'package:omi/utils/environment_detector.dart';
-import 'package:omi/pages/settings/developer.dart';
 import 'package:omi/utils/logger.dart';
 import 'package:omi/utils/logger.dart';
 import 'package:omi/utils/platform/platform_manager.dart';
@@ -277,14 +267,9 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
         ListenableProvider(create: (context) => ConnectivityProvider()),
         ChangeNotifierProvider(create: (context) => AuthenticationProvider()),
         ChangeNotifierProvider(create: (context) => ConversationProvider()),
-        ListenableProvider(create: (context) => AppProvider()),
         ChangeNotifierProvider(create: (context) => PeopleProvider()),
         ChangeNotifierProvider(create: (context) => UsageProvider()),
-        ChangeNotifierProxyProvider<AppProvider, MessageProvider>(
-          create: (context) => MessageProvider(),
-          update: (BuildContext context, value, MessageProvider? previous) =>
-              (previous?..updateAppProvider(value)) ?? MessageProvider(),
-        ),
+        ChangeNotifierProvider(create: (context) => MessageProvider()),
         ChangeNotifierProxyProvider4<ConversationProvider, MessageProvider, PeopleProvider, UsageProvider,
             CaptureProvider>(
           create: (context) => CaptureProvider(),
@@ -307,30 +292,14 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
           update: (BuildContext context, device, SpeechProfileProvider? previous) =>
               (previous?..setProviders(device)) ?? SpeechProfileProvider(),
         ),
-        ChangeNotifierProxyProvider2<AppProvider, ConversationProvider, ConversationDetailProvider>(
+        ChangeNotifierProxyProvider<ConversationProvider, ConversationDetailProvider>(
           create: (context) => ConversationDetailProvider(),
-          update: (BuildContext context, app, conversation, ConversationDetailProvider? previous) =>
-              (previous?..setProviders(app, conversation)) ?? ConversationDetailProvider(),
+          update: (BuildContext context, conversation, ConversationDetailProvider? previous) =>
+              (previous?..setProviders(conversation)) ?? ConversationDetailProvider(),
         ),
         ChangeNotifierProvider(create: (context) => DeveloperModeProvider()..initialize()),
-        ChangeNotifierProvider(create: (context) => McpProvider()),
-        ChangeNotifierProxyProvider<AppProvider, AddAppProvider>(
-          create: (context) => AddAppProvider(),
-          update: (BuildContext context, value, AddAppProvider? previous) =>
-              (previous?..setAppProvider(value)) ?? AddAppProvider(),
-        ),
-        ChangeNotifierProxyProvider<AppProvider, AiAppGeneratorProvider>(
-          create: (context) => AiAppGeneratorProvider(),
-          update: (BuildContext context, value, AiAppGeneratorProvider? previous) =>
-              (previous?..setAppProvider(value)) ?? AiAppGeneratorProvider(),
-        ),
-        ChangeNotifierProvider(create: (context) => PaymentMethodProvider()),
-        ChangeNotifierProvider(create: (context) => PersonaProvider()),
         ChangeNotifierProvider(create: (context) => UserProvider()),
-        ChangeNotifierProvider(create: (context) => GoalsProvider()..init()),
         ChangeNotifierProvider(create: (context) => SyncProvider()),
-        ChangeNotifierProvider(create: (context) => TaskIntegrationProvider()),
-        ChangeNotifierProvider(create: (context) => IntegrationProvider()),
         ChangeNotifierProvider(create: (context) => CalendarProvider(), lazy: false),
         ChangeNotifierProvider(create: (context) => FolderProvider()),
         ChangeNotifierProvider(create: (context) => LocaleProvider()),
@@ -393,11 +362,7 @@ class _MyAppState extends State<MyApp> with WidgetsBindingObserver {
                 return Column(
                   children: [
                     GestureDetector(
-                      onTap: () {
-                        MyApp.navigatorKey.currentState?.push(
-                          MaterialPageRoute(builder: (context) => const DeveloperSettingsPage()),
-                        );
-                      },
+                      onTap: () {},
                       child: Container(
                         width: double.infinity,
                         padding: EdgeInsets.only(top: topPadding + 4, bottom: 4),

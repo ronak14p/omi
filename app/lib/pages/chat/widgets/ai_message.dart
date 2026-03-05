@@ -6,8 +6,6 @@ import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 
 import 'package:auto_size_text/auto_size_text.dart';
-import 'package:cached_network_image/cached_network_image.dart';
-import 'package:collection/collection.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:provider/provider.dart';
 import 'package:share_plus/share_plus.dart';
@@ -15,17 +13,14 @@ import 'package:omi/widgets/shimmer_with_timeout.dart';
 
 import 'package:omi/backend/http/api/conversations.dart';
 import 'package:omi/backend/preferences.dart';
-import 'package:omi/backend/schema/app.dart';
 import 'package:omi/backend/schema/conversation.dart';
 import 'package:omi/backend/schema/message.dart';
 import 'package:omi/pages/chat/widgets/files_handler_widget.dart';
 import 'package:omi/pages/chat/widgets/typing_indicator.dart';
 import 'package:omi/pages/conversation_detail/conversation_detail_provider.dart';
 import 'package:omi/pages/conversation_detail/page.dart';
-import 'package:omi/providers/app_provider.dart';
 import 'package:omi/providers/connectivity_provider.dart';
 import 'package:omi/providers/conversation_provider.dart';
-import 'package:omi/providers/message_provider.dart';
 import 'package:omi/utils/analytics/mixpanel.dart';
 import 'package:omi/utils/l10n_extensions.dart';
 import 'package:omi/utils/other/temp.dart';
@@ -56,54 +51,6 @@ String getThinkingDisplayText(String thinkingText) {
 
 /// Build app icon widget from app_id
 Widget _buildAppIcon(BuildContext context, String appId, {double size = 15, double opacity = 1.0}) {
-  final appProvider = Provider.of<AppProvider>(context, listen: false);
-  final messageProvider = Provider.of<MessageProvider>(context, listen: false);
-  // Check both public apps and user's installed chat apps (includes private MCP apps)
-  final app = appProvider.apps.firstWhereOrNull((a) => a.id == appId) ??
-      messageProvider.chatApps.firstWhereOrNull((a) => a.id == appId);
-
-  if (app != null) {
-    return Opacity(
-      opacity: opacity,
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(3),
-        child: CachedNetworkImage(
-          imageUrl: app.getImageUrl(),
-          httpHeaders: const {
-            "User-Agent":
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-          },
-          imageBuilder: (context, imageProvider) => Container(
-            width: size,
-            height: size,
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(3),
-              image: DecorationImage(
-                image: imageProvider,
-                fit: BoxFit.cover,
-              ),
-            ),
-          ),
-          placeholder: (context, url) => SizedBox(
-            width: size,
-            height: size,
-            child: Icon(
-              Icons.apps,
-              size: size * 0.7,
-              color: Colors.white.withOpacity(opacity),
-            ),
-          ),
-          errorWidget: (context, url, error) => Icon(
-            Icons.apps,
-            size: size * 0.7,
-            color: Colors.white.withOpacity(opacity),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // Fallback to generic icon if app not found
   return Opacity(
     opacity: opacity,
     child: Icon(
@@ -187,7 +134,6 @@ class AIMessage extends StatefulWidget {
   final Function(String) sendMessage;
   final Function(String)? onAskOmi;
   final bool displayOptions;
-  final App? appSender;
   final Function(ServerConversation) updateConversation;
   final Function(int, {String? reason}) setMessageNps;
 
@@ -199,7 +145,6 @@ class AIMessage extends StatefulWidget {
     required this.displayOptions,
     required this.updateConversation,
     required this.setMessageNps,
-    this.appSender,
     this.showTypingIndicator = false,
     this.showThinkingAfterText = false,
   });
@@ -231,7 +176,6 @@ class _AIMessageState extends State<AIMessage> {
             widget.sendMessage,
             widget.showTypingIndicator,
             widget.displayOptions,
-            widget.appSender,
             widget.updateConversation,
             widget.setMessageNps,
             onAskOmi: widget.onAskOmi,
@@ -248,7 +192,6 @@ Widget buildMessageWidget(
   Function(String) sendMessage,
   bool showTypingIndicator,
   bool displayOptions,
-  App? appSender,
   Function(ServerConversation) updateConversation,
   Function(int, {String? reason}) sendMessageNps, {
   Function(String)? onAskOmi,

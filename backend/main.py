@@ -9,38 +9,16 @@ from fastapi import FastAPI
 
 from modal import Image, App, asgi_app, Secret
 from routers import (
-    workflow,
     chat,
-    firmware,
-    plugins,
     transcribe,
     notifications,
     speech_profile,
-    agents,
     users,
-    trends,
     sync,
-    apps,
     custom_auth,
-    payment,
-    integration,
     conversations,
-    mcp,
-    mcp_sse,
-    oauth,
     auth,
-    task_integrations,
-    integrations,
     other,
-    developer,
-    updates,
-    calendar_meetings,
-    imports,
-    knowledge_graph,
-    wrapped,
-    folders,
-    goals,
-    announcements,
     agent_tools,
 )
 
@@ -61,42 +39,15 @@ app = FastAPI()
 
 app.include_router(transcribe.router)
 app.include_router(conversations.router)
-app.include_router(task_integrations.router)
-app.include_router(integrations.router)
 app.include_router(chat.router)
-app.include_router(plugins.router)
 app.include_router(speech_profile.router)
 # app.include_router(screenpipe.router)
 app.include_router(notifications.router)
-app.include_router(workflow.router)
-app.include_router(integration.router)
-app.include_router(agents.router)
 app.include_router(users.router)
-app.include_router(trends.router)
-
 app.include_router(other.router)
-
-app.include_router(firmware.router)
-app.include_router(updates.router)
 app.include_router(sync.router)
-
-app.include_router(apps.router)
 app.include_router(custom_auth.router)
-app.include_router(calendar_meetings.router)
-app.include_router(oauth.router)  # Added oauth router (for Omi Apps)
 app.include_router(auth.router)  # Added auth router (for the main Omi App, this is the core auth router)
-
-
-app.include_router(payment.router)
-app.include_router(mcp.router)
-app.include_router(mcp_sse.router)
-app.include_router(developer.router)
-app.include_router(imports.router)
-app.include_router(wrapped.router)
-app.include_router(folders.router)
-app.include_router(knowledge_graph.router)
-app.include_router(goals.router)
-app.include_router(announcements.router)
 app.include_router(agent_tools.router)
 
 

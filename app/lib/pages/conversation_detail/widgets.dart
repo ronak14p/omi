@@ -13,21 +13,18 @@ import 'package:tuple/tuple.dart';
 import 'package:omi/backend/http/api/conversations.dart';
 import 'package:omi/backend/http/webhooks.dart';
 import 'package:omi/backend/preferences.dart';
-import 'package:omi/backend/schema/app.dart';
 import 'package:omi/backend/schema/conversation.dart';
 import 'package:omi/backend/schema/folder.dart';
 import 'package:omi/backend/schema/geolocation.dart';
 import 'package:omi/backend/schema/structured.dart';
 import 'package:omi/utils/l10n_extensions.dart';
 import 'package:omi/gen/assets.gen.dart';
-import 'package:omi/pages/apps/app_detail/app_detail.dart';
 import 'package:omi/pages/conversation_detail/conversation_detail_provider.dart';
 import 'package:omi/pages/conversation_detail/share.dart';
 import 'package:omi/pages/conversation_detail/test_prompts.dart';
 import 'package:omi/pages/conversation_detail/widgets/conversation_markdown_widget.dart';
-import 'package:omi/pages/conversation_detail/widgets/summarized_apps_sheet.dart';
 import 'package:omi/pages/conversations/widgets/move_to_folder_sheet.dart';
-import 'package:omi/pages/settings/developer.dart';
+import 'package:omi/pages/settings/settings_drawer.dart';
 import 'package:omi/providers/folder_provider.dart';
 import 'package:omi/utils/analytics/mixpanel.dart';
 import 'package:omi/utils/folders/folder_icon_mapper.dart';
@@ -721,7 +718,6 @@ class ReprocessDiscardedWidget extends StatelessWidget {
 
 class AppResultDetailWidget extends StatelessWidget {
   final AppResponse appResponse;
-  final App? app;
   final ServerConversation conversation;
   final String searchQuery;
   final int currentResultIndex;
@@ -729,7 +725,6 @@ class AppResultDetailWidget extends StatelessWidget {
   const AppResultDetailWidget({
     super.key,
     required this.appResponse,
-    required this.app,
     required this.conversation,
     this.searchQuery = '',
     this.currentResultIndex = -1,
@@ -752,19 +747,8 @@ class AppResultDetailWidget extends StatelessWidget {
                     mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Expanded(
-                        child: GestureDetector(
-                          onTap: () {
-                            showModalBottomSheet(
-                              context: context,
-                              isScrollControlled: true,
-                              backgroundColor: Colors.transparent,
-                              builder: (context) => const SummarizedAppsBottomSheet(),
-                            );
-                          },
-                          child: RichText(
-                            text: TextSpan(
-                                style: const TextStyle(color: Colors.grey), text: context.l10n.noSummaryForApp),
-                          ),
+                        child: RichText(
+                          text: TextSpan(style: const TextStyle(color: Colors.grey), text: context.l10n.noSummaryForApp),
                         ),
                       ),
                     ],
@@ -775,110 +759,6 @@ class AppResultDetailWidget extends StatelessWidget {
                     currentResultIndex: currentResultIndex,
                   ),
           ),
-
-          // App info in a more subtle format below the content - only show if content is not empty
-          if (content.isNotEmpty)
-            GestureDetector(
-              onTap: () async {
-                if (app != null) {
-                  MixpanelManager().pageOpened('App Detail');
-                  await routeToPage(context, AppDetailPage(app: app!));
-                }
-              },
-              child: Padding(
-                padding: const EdgeInsets.only(top: 12, left: 4),
-                child: Row(
-                  children: [
-                    // App icon
-                    app != null
-                        ? CachedNetworkImage(
-                            imageUrl: app!.getImageUrl(),
-                            imageBuilder: (context, imageProvider) {
-                              return CircleAvatar(
-                                backgroundColor: Colors.white,
-                                radius: 12,
-                                backgroundImage: imageProvider,
-                              );
-                            },
-                            errorWidget: (context, url, error) {
-                              return const CircleAvatar(
-                                backgroundColor: Colors.white,
-                                radius: 12,
-                                child: Icon(Icons.error_outline_rounded, size: 12),
-                              );
-                            },
-                            progressIndicatorBuilder: (context, url, progress) => CircleAvatar(
-                              backgroundColor: Colors.white,
-                              radius: 12,
-                              child: CircularProgressIndicator(
-                                value: progress.progress,
-                                valueColor: const AlwaysStoppedAnimation<Color>(Colors.white),
-                                strokeWidth: 2,
-                              ),
-                            ),
-                          )
-                        : Container(
-                            decoration: BoxDecoration(
-                              image: DecorationImage(
-                                image: AssetImage(Assets.images.background.path),
-                                fit: BoxFit.cover,
-                              ),
-                              borderRadius: const BorderRadius.all(Radius.circular(12.0)),
-                            ),
-                            height: 24,
-                            width: 24,
-                            child: Stack(
-                              alignment: Alignment.center,
-                              children: [
-                                Image.asset(
-                                  Assets.images.herologo.path,
-                                  height: 16,
-                                  width: 16,
-                                ),
-                              ],
-                            ),
-                          ),
-
-                    const SizedBox(width: 8),
-
-                    // App name and description with arrow
-                    Expanded(
-                      child: Row(
-                        children: [
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(
-                                  app != null ? app!.name.decodeString : context.l10n.unknownApp,
-                                  maxLines: 1,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.white,
-                                    fontSize: 14,
-                                  ),
-                                ),
-                                if (app != null)
-                                  Text(
-                                    app!.description.decodeString,
-                                    maxLines: 1,
-                                    overflow: TextOverflow.ellipsis,
-                                    style: const TextStyle(color: Colors.grey, fontSize: 12),
-                                  ),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(
-                            child: Icon(Icons.arrow_forward_ios, color: Colors.white, size: 20),
-                            width: 42,
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -906,7 +786,6 @@ class GetAppsWidgets extends StatelessWidget {
                   if (!provider.conversation.discarded) ...[
                     AppResultDetailWidget(
                       appResponse: summarizedApp,
-                      app: provider.findAppById(summarizedApp.appId),
                       conversation: provider.conversation,
                       searchQuery: searchQuery,
                       currentResultIndex: currentResultIndex,
@@ -944,14 +823,7 @@ class GetAppsWidgets extends StatelessWidget {
                   borderRadius: BorderRadius.circular(12),
                 ),
                 child: MaterialButton(
-                  onPressed: () {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => const SummarizedAppsBottomSheet(),
-                    );
-                  },
+                  onPressed: provider.loadingReprocessConversation ? null : () => provider.reprocessConversation(),
                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
                   child: Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 0),
@@ -1188,7 +1060,7 @@ class _GetDevToolsOptionsState extends State<GetDevToolsOptions> {
                   },
                   () {
                     Navigator.pop(context);
-                    routeToPage(context, const DeveloperSettingsPage());
+                    SettingsDrawer.show(context);
                   },
                   context.l10n.webhookUrlNotSet,
                   context.l10n.setWebhookUrlInSettings,

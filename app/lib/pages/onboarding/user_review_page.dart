@@ -30,8 +30,8 @@ class _UserReviewPageState extends State<UserReviewPage> {
     HapticFeedback.mediumImpact();
 
     final Uri reviewUrl = Platform.isIOS
-        ? Uri.parse('https://apps.apple.com/app/id6502156163?action=write-review')
-        : Uri.parse('https://play.google.com/store/apps/details?id=com.friend.ios');
+        ? Uri.parse('itms-apps://itunes.apple.com/app/id6502156163?action=write-review')
+        : Uri.parse('market://details?id=com.friend.ios');
 
     if (await canLaunchUrl(reviewUrl)) {
       await launchUrl(reviewUrl, mode: LaunchMode.externalApplication);

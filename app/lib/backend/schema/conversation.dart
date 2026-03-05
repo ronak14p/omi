@@ -199,7 +199,6 @@ class ServerConversation {
   final List<AudioFile> audioFiles;
 
   final List<AppResponse> appResults;
-  final List<String> suggestedSummarizationApps;
   final ConversationSource? source;
   final String? language; // applies to friend/omi only
 
@@ -224,7 +223,6 @@ class ServerConversation {
     this.finishedAt,
     this.transcriptSegments = const [],
     this.appResults = const [],
-    this.suggestedSummarizationApps = const [],
     this.geolocation,
     this.photos = const [],
     this.audioFiles = const [],
@@ -252,8 +250,6 @@ class ServerConversation {
           .toList(),
       appResults:
           ((json['apps_results'] ?? []) as List<dynamic>).map((result) => AppResponse.fromJson(result)).toList(),
-      suggestedSummarizationApps:
-          ((json['suggested_summarization_apps'] ?? []) as List<dynamic>).map((appId) => appId.toString()).toList(),
       geolocation: json['geolocation'] != null ? Geolocation.fromJson(json['geolocation']) : null,
       photos: json['photos'] != null
           ? ((json['photos'] ?? []) as List<dynamic>).map((photo) => ConversationPhoto.fromJson(photo)).toList()
@@ -284,7 +280,6 @@ class ServerConversation {
       'finished_at': finishedAt?.toUtc().toIso8601String(),
       'transcript_segments': transcriptSegments.map((segment) => segment.toJson()).toList(),
       'plugins_results': appResults.map((result) => result.toJson()).toList(),
-      'suggested_summarization_apps': suggestedSummarizationApps,
       'geolocation': geolocation?.toJson(),
       'photos': photos.map((photo) => photo.toJson()).toList(),
       'discarded': discarded,

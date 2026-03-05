@@ -39,8 +39,8 @@ from utils.llm.chat import (
 from utils.llm.persona import answer_persona_question_stream
 from utils.other.chat_file import FileChatTool
 from utils.other.endpoints import timeit
-from utils.app_integrations import get_github_docs_content
 from utils.retrieval.agentic import execute_agentic_chat_stream
+from utils.retrieval.omi_docs import get_omi_docs_content
 from utils.observability.langsmith import get_chat_tracer_callbacks
 import logging
 
@@ -199,7 +199,7 @@ def no_context_conversation(state: GraphState):
 def omi_question(state: GraphState):
     logger.info("no_context_omi_question node")
 
-    context: dict = get_github_docs_content()
+    context: dict = get_omi_docs_content()
     context_str = 'Documentation:\n\n'.join([f'{k}:\n {v}' for k, v in context.items()])
 
     # streaming

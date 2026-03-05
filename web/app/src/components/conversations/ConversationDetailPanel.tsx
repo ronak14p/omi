@@ -22,7 +22,6 @@ import { cn } from '@/lib/utils';
 import { formatTime, formatDuration } from '@/lib/utils';
 import { TranscriptView } from './TranscriptView';
 import { AppSummaryCard } from './AppSummaryCard';
-import { GenerateSummaryButton } from './GenerateSummaryButton';
 import { ConversationActionsMenu } from './ConversationActionsMenu';
 import { EditableTitle } from './EditableTitle';
 import { SpeakerTagSheet } from './SpeakerTagSheet';
@@ -142,24 +141,17 @@ function ActionItemRow({ item }: { item: ActionItem }) {
 interface SummaryTabProps {
   overview: string;
   category?: string;
-  conversationId: string;
   appResults: AppResponse[];
-  suggestedAppIds: string[];
-  onGenerateComplete?: (conversation: Conversation) => void;
   geolocation?: Geolocation | null;
 }
 
 function SummaryTab({
   overview,
   category,
-  conversationId,
   appResults,
-  suggestedAppIds,
-  onGenerateComplete,
   geolocation,
 }: SummaryTabProps) {
   const hasAppSummaries = appResults && appResults.length > 0;
-  const hasSuggestedApps = suggestedAppIds && suggestedAppIds.length > 0;
   const hasLocation = geolocation && geolocation.latitude && geolocation.longitude;
 
   // State for expandable text
@@ -275,43 +267,24 @@ function SummaryTab({
         </div>
       )}
 
-      {/* App Summaries Section */}
-      {(hasAppSummaries || hasSuggestedApps) && (
+      {/* Legacy App Summaries */}
+      {hasAppSummaries && (
         <div className="pt-4 border-t border-bg-tertiary">
-          {/* Section Header with Generate Button */}
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2 mb-4">
             <div className="flex items-center gap-2">
               <Sparkles className="w-4 h-4 text-purple-primary" />
-              <h3 className="text-sm font-medium text-text-primary">Summary Templates</h3>
+              <h3 className="text-sm font-medium text-text-primary">Template Summaries</h3>
             </div>
-            {hasSuggestedApps && (
-              <GenerateSummaryButton
-                conversationId={conversationId}
-                suggestedAppIds={suggestedAppIds}
-                existingAppResults={appResults}
-                onGenerateComplete={onGenerateComplete}
-              />
-            )}
           </div>
 
-          {/* App Summary Cards */}
-          {hasAppSummaries && (
-            <div className="space-y-3">
-              {appResults.map((appResponse, index) => (
-                <AppSummaryCard
-                  key={`${appResponse.app_id}-${index}`}
-                  appResponse={appResponse}
-                />
-              ))}
-            </div>
-          )}
-
-          {/* Empty state for templates */}
-          {!hasAppSummaries && hasSuggestedApps && (
-            <p className="text-sm text-text-tertiary mt-2">
-              No summaries yet. Click the button above to generate one or create a custom template.
-            </p>
-          )}
+          <div className="space-y-3">
+            {appResults.map((appResponse, index) => (
+              <AppSummaryCard
+                key={`${appResponse.app_id}-${index}`}
+                appResponse={appResponse}
+              />
+            ))}
+          </div>
         </div>
       )}
     </div>
@@ -703,10 +676,7 @@ export function ConversationDetailPanel({
               <SummaryTab
                 overview={structured.overview}
                 category={structured.category}
-                conversationId={conversationId}
                 appResults={conversation.apps_results || []}
-                suggestedAppIds={conversation.suggested_summarization_apps || []}
-                onGenerateComplete={onConversationUpdate}
                 geolocation={geolocation}
               />
             )}

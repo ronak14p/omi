@@ -259,11 +259,6 @@ def _get_agentic_module():
         mock_tool.name = name.replace("_tool", "")
         setattr(tools_pkg, name, mock_tool)
 
-    # Stub app_tools
-    app_tools_mod = _stub_module("utils.retrieval.tools.app_tools")
-    app_tools_mod.load_app_tools = MagicMock(return_value=[])
-    app_tools_mod.get_tool_status_message = MagicMock(return_value=None)
-
     return _load_module_from_file("utils.retrieval.agentic", BACKEND_DIR / "utils" / "retrieval" / "agentic.py")
 
 
@@ -478,8 +473,8 @@ def test_core_tools_has_22_tools():
 
 def test_core_tools_list_creates_independent_copy():
     """
-    list(CORE_TOOLS) must create an independent copy so that appending
-    app tools to one request's list doesn't mutate the shared constant.
+    list(CORE_TOOLS) must create an independent copy so local list mutation
+    does not mutate the shared constant.
     """
     agentic_mod = _get_agentic_module()
 
@@ -492,9 +487,9 @@ def test_core_tools_list_creates_independent_copy():
     assert tools_a is not agentic_mod.CORE_TOOLS
 
     # Mutating one should not affect the other
-    mock_app_tool = MagicMock()
-    mock_app_tool.name = "custom_app_tool"
-    tools_a.append(mock_app_tool)
+    mock_tool = MagicMock()
+    mock_tool.name = "custom_tool"
+    tools_a.append(mock_tool)
 
     assert len(tools_a) == 23
     assert len(tools_b) == 22
@@ -630,16 +625,9 @@ def test_llm_agent_model_kwargs_via_real_instantiation():
 def test_execute_agentic_chat_tool_order_via_create_react_agent():
     """
     Call execute_agentic_chat and intercept create_react_agent to capture
-    the actual tools list passed at runtime. Verifies core tools come first
-    and app tools are appended after.
+    the actual tools list passed at runtime.
     """
     agentic_mod = _get_agentic_module()
-
-    # Set up mock app tools — patch on the agentic module directly since
-    # it already imported load_app_tools at module load time
-    mock_app_tool = MagicMock()
-    mock_app_tool.name = "custom_weather_app"
-    agentic_mod.load_app_tools = MagicMock(return_value=[mock_app_tool])
 
     # Intercept create_react_agent to capture the tools argument
     captured_tools = []
@@ -670,12 +658,10 @@ def test_execute_agentic_chat_tool_order_via_create_react_agent():
         assert len(captured_tools) == 1, "create_react_agent should have been called once"
         tools = captured_tools[0]
 
-        # First 22 should be CORE_TOOLS
-        assert len(tools) == 23, f"Expected 22 core + 1 app = 23 tools, got {len(tools)}"
-        core_names = [t.name for t in tools[:22]]
+        assert len(tools) == 22, f"Expected exactly 22 core tools, got {len(tools)}"
+        core_names = [t.name for t in tools]
         expected_core = [t.name for t in agentic_mod.CORE_TOOLS]
         assert core_names == expected_core, "Core tools order was disrupted in execute path"
-        assert tools[22].name == "custom_weather_app", "App tool should be appended at end"
     finally:
         agentic_mod.create_react_agent = original_create
 
@@ -686,9 +672,6 @@ def test_execute_agentic_chat_no_app_tools_gives_core_only():
     are passed to create_react_agent.
     """
     agentic_mod = _get_agentic_module()
-
-    # No app tools — patch on the module directly
-    agentic_mod.load_app_tools = MagicMock(return_value=[])
 
     captured_tools = []
     original_create = agentic_mod.create_react_agent

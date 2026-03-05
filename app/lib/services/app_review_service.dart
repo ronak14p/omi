@@ -15,8 +15,8 @@ class AppReviewService {
   factory AppReviewService() => _instance;
   AppReviewService._internal();
 
-  static final Uri _appStoreReviewUrl = Uri.parse('https://apps.apple.com/app/id6502156163?action=write-review');
-  static final Uri _playStoreUrl = Uri.parse('https://play.google.com/store/apps/details?id=com.friend.ios');
+  static final Uri _appStoreReviewUrl = Uri.parse('itms-apps://itunes.apple.com/app/id6502156163?action=write-review');
+  static final Uri _playStoreUrl = Uri.parse('market://details?id=com.friend.ios');
   static const String _hasCompletedFirstActionItemKey = 'has_completed_first_action_item';
   static const String _hasShownReviewPromptKey = 'has_shown_review_prompt';
   static const String _hasFirstConversationKey = 'has_first_conversation';
